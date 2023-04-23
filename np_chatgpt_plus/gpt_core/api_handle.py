@@ -1,4 +1,5 @@
-from revChatGPT.recipient import Recipient, RecipientManager
+from revChatGPT.recipient import Recipient
+
 
 class UserAPIManager:
     def __init__(self):
@@ -27,5 +28,6 @@ class UserAPIManager:
     def clear_user_apis(self, user_id):
         if user_id in self.user_apis:
             del self.user_apis[user_id]
+
 
 user_api_manager = UserAPIManager()

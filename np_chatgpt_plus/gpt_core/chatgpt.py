@@ -136,41 +136,17 @@ class GPTCore:
         cid = self.user_bot_cid.get(id, None)
         is_new = cid == None
 
-        try:
-            t = {}
-            async for reply in self.cbt.ask(strs, cid, model=model, auto_continue=complete):
-                t = reply
-                yield t
-            cid = t.get("conversation_id", cid)
-            self.user_bot_cid[id] = cid
-        except httpx.HTTPStatusError as e:
-            # 404: Not Found
-            # 以上两种情况下，重新请求
-            if self.try_time[hash(strs)] < 3 and e.response.status_code in [404]:
-                print(e, e.args)
-                await asyncio.sleep(3)
-                async for reply in self.GptAsk(strs, False, id, complete=complete): # type: ignore
-                    cid = reply.get("conversation_id", cid)
-                    yield reply
-                self.user_bot_cid[id] = cid
-            else:
-                raise e
-        except rct.Error as e:
-            if self.try_time[hash(strs)] < 3 and e.code in [404]:
-                print(e, e.args)
-                await asyncio.sleep(3)
-                async for reply in self.GptAsk(strs, False, id, complete=complete):  # type: ignore
-                    cid = reply.get("conversation_id", cid)
-                    yield reply
-                self.user_bot_cid[id] = cid
-            else:
-                raise e
-        finally:
-            if persistent:
-                if is_new and cid != None and id.isdigit() and int(id) > 10000:
-                    await self.cbt.change_title(cid, f"QQ: The Conversation of {id}")
-            elif random.random() < 0.2 or must_delete:
-                await self.ResetConversation(id)  # 20%的概率删除会话，减少连接次数
+        t = {}
+        async for reply in self.cbt.ask(strs, cid, model=model, auto_continue=complete):
+            t = reply
+            yield t
+        cid = t.get("conversation_id", cid)
+        self.user_bot_cid[id] = cid
+        if persistent:
+            if is_new and cid != None and id.isdigit() and int(id) > 10000:
+                await self.cbt.change_title(cid, f"QQ: The Conversation of {id}")
+        elif random.random() < 0.2 or must_delete:
+            await self.ResetConversation(id)  # 20%的概率删除会话，减少连接次数
 
         if hash(strs) in self.try_time:
             del self.try_time[hash(strs)]

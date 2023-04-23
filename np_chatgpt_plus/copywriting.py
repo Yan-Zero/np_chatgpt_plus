@@ -112,11 +112,11 @@ async def cw_gene(
     t = args.extract_plain_text().split(" ", 1)
     if t[0] == "":
         return await cw_gene(
-            bot, event, cw, MessageChain([{"type": "Plain", "text": "1"}])
+            bot, event, MessageChain([{"type": "Plain", "text": "1"}]), cw
         )
     if len(t) == 1:
         if t[0].isdigit():
-            pi = int(t[0])
+            pi = int(t[0], base=10)
             mp = len(cw_dirs) // 6 + 1
             pi = pi if pi <= mp else mp
             pi = pi if pi > 0 else 1
