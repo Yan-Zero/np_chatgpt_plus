@@ -1,13 +1,18 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 from nonebot_plugin_datastore import get_plugin_data
 from sqlalchemy import JSON, TEXT, String, Integer
 from sqlalchemy.orm import Mapped, mapped_column
+from nonebot.adapters.mirai2.message import MessageChain
 
-from .gpt_core.message import JsonMsg
+JsonMsg = List[Dict[str, Any]]
 
 Model = get_plugin_data().Model
+
+
+def deserialize_message(msg: JsonMsg):
+    return MessageChain(msg)
 
 
 class ConversationId(Model):

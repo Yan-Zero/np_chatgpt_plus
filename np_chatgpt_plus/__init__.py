@@ -1,7 +1,6 @@
 import nonebot
 
 nonebot.require("nonebot_plugin_datastore")
-from .config import Config
 import nonebot.plugin, nonebot.rule
 import httpx, nonebot, datetime
 from nonebot.adapters.mirai2 import (
@@ -18,20 +17,12 @@ from nonebot.params import CommandArg, Command
 from nonebot_plugin_datastore import get_plugin_data, create_session
 from nonebot.message import event_postprocessor
 from typing import Optional, Dict, Any
-from .rule import BAN, COUNT_LIMIT, GPTOWNER
+from nonebot_plugin_datastore.db import post_db_init
 from sqlalchemy import func, or_, select, delete, desc
+from .rule import BAN, COUNT_LIMIT, GPTOWNER
 from .model import MessageRecord, ConversationId
-from .gpt_core.chatgpt import (
-    chat_bot,
-    reset_chat_bot,
-    create_chat_bot,
-    is_be_using,
-    user_bot_cid,
-    llm,
-    rct,
-    init,
-)
-from .gpt_core.chatgpt import AsyncChatbotWithLock
+from .gpt_core import GPTCore
+from revChatGPT.typings import Error as CBTError
 from .gpt_core.record import (
     remove_timezone,
     get_message_records,
@@ -39,7 +30,8 @@ from .gpt_core.record import (
     clear_message_records,
     del_all_message_records,
 )
-from .gpt_core.api_handle import api_handle, user_api_manager
+from .gpt_core.api_handle import user_api_manager
+from .config import Config
 
 
 global_config = nonebot.get_driver().config
@@ -58,7 +50,14 @@ if plugin_config.cf_clearance:
         raise ValueError("cf_clearance_ua is required.")
     cbt_config["cf_clearance_ua"] = plugin_config.cf_clearance_ua
     cbt_config["cf_clearance"] = plugin_config.cf_clearance
-init(cbt_config=cbt_config, plugin_config=plugin_config)
+GPTCORE = GPTCore(cbt_config, plugin_config, "苦咖啡")
+API_HANDLE = GPTCORE.cbt.recipients
+
+
+@post_db_init
+async def init_db():
+    await GPTCORE.load_user_cid()
+
 
 clear_record = nonebot.plugin.on_command(
     "clear",
@@ -129,7 +128,7 @@ async def handle_api_docs(bot: Bot, event: MessageEvent, args=CommandArg()):
         page = int(args)
         if page < 1:
             page = 1
-        x = sorted(api_handle.available_recipients.items(), key=lambda item: item[0])
+        x = sorted(API_HANDLE.available_recipients.items(), key=lambda item: item[0])
         x = x[(page - 1) * 10 : page * 10]
         x = [f"- {k}: {v}" for k, v in x]
         await api_docs.finish(
@@ -144,7 +143,7 @@ api_key:
         await api_docs.finish("已清除")
     else:
         try:
-            ins = api_handle[args](event.get_user_id())
+            ins = API_HANDLE[args](event.get_user_id())
             user_api_manager.activate_api(event.get_user_id(), args, ins)
             await api_docs.send(
                 f"成功激活api_key: {args}\n目前一共激活了："
@@ -173,9 +172,9 @@ async def handle_set(bot: Bot, event: MessageEvent, args=CommandArg()):
         if len(args) > 2:
             cid = args[2]
         if args[1] == "llm":
-            llm.cid = cid
+            GPTCORE.llm.cid = cid
         else:
-            user_bot_cid[args[1]] = cid
+            GPTCORE.user_bot_cid[args[1]] = cid
         await set_.finish("设置成功")
     if args[0] == "limit":
         if len(args) < 2:
@@ -189,14 +188,10 @@ async def handle_set(bot: Bot, event: MessageEvent, args=CommandArg()):
         await set_.finish(f"已清理{lists[0]}的请求次数")
 
 
+@was_call.handle()
 @was_mention.handle()
 async def handle_was_mention(bot: Bot, event: MessageEvent):
     return await handle_chatbot(bot, event, "")
-
-
-@was_call.handle()
-async def handle_was_call(bot: Bot, event: MessageEvent):
-    return await handle_was_mention(bot, event)
 
 
 @gpt4.handle()
@@ -218,7 +213,7 @@ async def handle_chatbot(bot: Bot, event: MessageEvent, args=CommandArg()):
     if await BAN(bot=bot, event=event):
         await bot.send(event=event, message="你已被封禁", at_sender=True)
         return
-    if is_be_using() and not await GPTOWNER(bot=bot, event=event):
+    if GPTCORE.is_be_using and not await GPTOWNER(bot=bot, event=event):
         await chatbot.finish("GPT 正在使用中，请稍后再试")
 
     try:
@@ -250,7 +245,7 @@ async def handle_chatbot(bot: Bot, event: MessageEvent, args=CommandArg()):
         await chatbot.finish("非常抱歉，您的请求次数已达上限。（每天0点重置）")
 
     try:
-        result = await chat_bot(bot, event, args)
+        result = await GPTCORE.chat_bot(bot, event, args)
         if len(result) > 1:
             nickname = (await bot.bot_profile())["nickname"]
             # 构造成转发消息的形式
@@ -317,19 +312,19 @@ async def handle_chatbot(bot: Bot, event: MessageEvent, args=CommandArg()):
             at_sender=False,
             quote=event.source.id if event.source else None,
         )
-    except TimeoutError as e:
+    except TimeoutError:
         await chatbot.send("请求超时，请稍后再试")
-    except httpx.HTTPError as e:
-        if isinstance(e, httpx.HTTPStatusError):
-            if e.response.status_code == 429:
+    except httpx.HTTPError as ex:
+        if isinstance(ex, httpx.HTTPStatusError):
+            if ex.response.status_code == 429:
                 await chatbot.send("请求过于频繁，请稍后再试")
             else:
-                await chatbot.send(f"错误代码：{e.response.status_code}\n错误信息：{e}")
+                await chatbot.send(f"错误代码：{ex.response.status_code}\n错误信息：{ex}")
         else:
-            await chatbot.send("未知错误，请稍后再试：\n{e}\n{eargs}".format(e=e, eargs=e.args))
-            raise e
-    except rct.Error as e:
-        await chatbot.send(f"错误代码：{e.code}\n错误信息：{e.message}")
+            await chatbot.send("未知错误，请稍后再试：\n{e}\n{eargs}".format(e=ex, eargs=ex.args))
+            raise ex
+    except CBTError as ex:
+        await chatbot.send(f"错误代码：{ex.code}\n错误信息：{ex.message}")
 
 
 @reset.handle()
@@ -338,18 +333,18 @@ async def handle_reset(
 ):
     if await SUPERUSER(bot=bot, event=event):
         if args.extract_plain_text() == "all":
-            await reset.finish(await reset_chat_bot(bot, "all", "all"))
+            await reset.finish(await GPTCORE.reset_chat_bot(bot, "all", "all"))
         lists = [str(x.data["target"]) for x in args if x.type == MessageType.AT]
         lists.extend([x for x in args.extract_plain_text().split(" ") if x.isdigit()])
         if lists:
             for id in lists:
-                result = await reset_chat_bot(bot, id, (await bot.user_profile(target=int(id)))["nickname"])  # type: ignore
+                result = await GPTCORE.reset_chat_bot(bot, id, (await bot.user_profile(target=int(id)))["nickname"])
                 await reset.send(result)
             return
 
     try:
         nickname = event.sender.name if isinstance(event, GroupMessage) else event.sender.nickname  # type: ignore
-        result = await reset_chat_bot(bot, event.get_user_id(), nickname)
+        result = await GPTCORE.reset_chat_bot(bot, event.get_user_id(), nickname)
         await bot.send(
             event=event, message=result, quote=event.source.id if event.source else None
         )
@@ -471,9 +466,10 @@ async def handle_manager(cmd: tuple[str, str] = Command()):
 
 from typing import Tuple
 import traceback
-from .summarize import summarize_message
+from .summarize import SummarizeLog
 from .copywriting import cw_gene
 
+SUMMARIZER = SummarizeLog(GPTCORE.llm)
 summarize_ = nonebot.plugin.on_command(
     "sum",
     rule=nonebot.rule.to_me(),
@@ -512,7 +508,7 @@ async def handle_summarize(bot: Bot, event: MessageEvent):
     else:
         return
     try:
-        result = await summarize_message(bot, records)
+        result = await SUMMARIZER.summarize_message(bot, records)
         await summarize_.send(result)
         return
     except Exception as e:

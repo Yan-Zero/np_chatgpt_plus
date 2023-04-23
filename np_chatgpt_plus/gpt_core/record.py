@@ -4,7 +4,6 @@ from typing import Iterable, List, Literal, Optional, Sequence, Union, overload
 from nonebot_plugin_datastore import create_session
 from sqlalchemy import func, or_, select, delete, desc
 
-from .message import deserialize_message
 from ..model import MessageRecord
 from nonebot.adapters.mirai2 import Bot, SUPERUSER, GroupMessage
 from nonebot.adapters.mirai2.event import MessageEvent

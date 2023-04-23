@@ -4,13 +4,11 @@ from nonebot.internal.permission import USER as USER
 from nonebot.internal.permission import User as User
 from nonebot.internal.permission import Permission as Permission
 from .config import Config
-from nonebot_plugin_datastore import get_plugin_data, create_session
+from nonebot_plugin_datastore import get_plugin_data
 
 plugin_data = get_plugin_data()
 global_config = nonebot.get_driver().config
 plugin_config = Config.parse_obj(global_config)
-
-__cached = {}
 
 
 class Ban(Permission):
@@ -42,7 +40,6 @@ class RequestLimit(Permission):
         return "RequestLimit()"
 
     async def __call__(self, bot: Bot, event: Event) -> bool:
-        global __cached
         try:
             user_id = event.get_user_id()
         except Exception:

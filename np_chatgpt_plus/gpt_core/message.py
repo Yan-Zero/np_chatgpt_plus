@@ -1,16 +1,4 @@
-import base64
-import hashlib
-from pathlib import Path
-from typing import Any, Dict, List, Type, Union, overload
-
-from nonebot_plugin_datastore import get_plugin_data
 from nonebot.adapters.mirai2.message import MessageChain
-
-JsonMsg = List[Dict[str, Any]]
-
-
-def deserialize_message(msg: JsonMsg):
-    return MessageChain(msg)
 
 
 def simplify_message(msg: MessageChain, desc: bool = False) -> str:

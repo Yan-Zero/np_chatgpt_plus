@@ -6,14 +6,9 @@ from .config import Config
 from nonebot.adapters.mirai2 import Bot, MessageChain
 from nonebot.adapters.mirai2.event import MessageEvent
 from typing import Optional
-from .gpt_core.chatgpt import (
-    is_be_using,
-    OnceAsk,
-    ResetConversation,
-)
-from .gpt_core.ChatbotWithLock import get_token_count
+from .gpt_core.chatbot_with_lock import get_token_count
 from .rule import GPTOWNER
-
+from . import GPTCORE
 
 plugin_config = Config.parse_obj(nonebot.get_driver().config)
 if not plugin_config.cw_path:
@@ -141,7 +136,7 @@ async def cw_gene(
                 )
             )
         await cw.finish("[文案] 请输入文案内容")
-    if is_be_using() and not await GPTOWNER(bot=bot, event=event):
+    if GPTCORE.is_be_using and not await GPTOWNER(bot=bot, event=event):
         return await cw.finish("[文案] 机器人正忙，请稍后再试")
     t.extend(t.pop().strip().split("\n", 1))
     prompt = get_cw(t[0], t[1].strip(), info=None if len(t) == 2 else t[2].strip())
@@ -182,7 +177,7 @@ async def cw_gene(
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 429:
             await cw.send("[文案] 机器人请求过于频繁，请稍后再试")
-            await ResetConversation("20")
+            await GPTCORE.ResetConversation("20")
         else:
             await cw.send("[文案] 生成文案失败: " + str(e))
     except Exception as e:

@@ -1,6 +1,4 @@
 from revChatGPT.recipient import Recipient, RecipientManager
-from .chatgpt import cbt
-
 
 class UserAPIManager:
     def __init__(self):
@@ -30,6 +28,4 @@ class UserAPIManager:
         if user_id in self.user_apis:
             del self.user_apis[user_id]
 
-
-api_handle = cbt.recipients
 user_api_manager = UserAPIManager()
