@@ -1,14 +1,14 @@
-from setuptools import setup, find_namespace_packages
+from setuptools import setup, find_packages
 
 setup(
     name="np_chatgpt_plus",
-    version="0.1.1",
+    version="0.1.6",
     author="Yan",
     author_email="1964649083@qq.com",
     description="A Chatbot Framework for Nonebot2",
     python_requires=">=3.9",
     keywords=["nonebot"],
-    packages=find_namespace_packages(),
+    packages=find_packages(),
     install_requires=[
         "nonebot2",
         "revChatGPT",
