@@ -8,8 +8,10 @@ from nonebot.adapters.mirai2.message import MessageChain
 
 JsonMsg = List[Dict[str, Any]]
 
+
 def deserialize_message(msg: JsonMsg):
     return MessageChain(msg)
+
 
 def simplify_message(msg: MessageChain, desc: bool = False) -> str:
     result = ""
@@ -53,4 +55,3 @@ def simplify_message(msg: MessageChain, desc: bool = False) -> str:
         else:
             result += f"[Unkown {i.type}]"
     return result
-    

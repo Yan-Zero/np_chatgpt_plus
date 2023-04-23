@@ -1,44 +1,19 @@
-import nonebot, sys, pathlib
-
-nonebot.require("gpt_core")
-
+import nonebot
 import nonebot.plugin
 import nonebot.rule
 import httpx, os
 from .config import Config
-from nonebot.adapters.mirai2 import (
-    Bot,
-    SUPERUSER,
-    GroupMessage,
-    FriendMessage,
-    MessageChain,
-)
-from nonebot.adapters.mirai2.event import MessageEvent, Event
-from nonebot.adapters import Bot as BaseBot
-from nonebot.adapters.mirai2.message import MessageType
-from nonebot.params import CommandArg, Command, CommandStart
-from nonebot_plugin_datastore import get_plugin_data, create_session
-from typing import Optional, Dict, Any, Tuple
-from sqlalchemy import func, or_, select, delete, desc
-from ..gpt_core.chatgpt import (
+from nonebot.adapters.mirai2 import Bot, MessageChain
+from nonebot.adapters.mirai2.event import MessageEvent
+from typing import Optional
+from .gpt_core.chatgpt import (
     is_be_using,
-    GptAsk,
     OnceAsk,
     ResetConversation,
-    GPTOWNER,
 )
-from ..gpt_core.ChatbotWithLock import get_code_from_markdown, get_token_count
+from .gpt_core.ChatbotWithLock import get_token_count
+from .rule import GPTOWNER
 
-cw = nonebot.plugin.on_command("cw", priority=4, block=True)
-manage = nonebot.plugin.on_command(
-    ("cw", "oepn"),
-    rule=nonebot.rule.to_me(),
-    aliases={("cw", "close")},
-    permission=SUPERUSER,
-    block=True,
-    priority=2,
-)
-cw_p = nonebot.plugin.on_command(("cw", "p"), priority=3, block=True)
 
 plugin_config = Config.parse_obj(nonebot.get_driver().config)
 if not plugin_config.cw_path:
@@ -134,14 +109,16 @@ def get_cw(keyword: str, topic: str, info: Optional[str] = None):
 
 
 async def cw_gene(
-    bot: Bot, event: MessageEvent, args: MessageChain, PoliticsSafe: bool = True
+    bot: Bot, event: MessageEvent, args: MessageChain, cw, PoliticsSafe: bool = True
 ):
     if not plugin_config.cw:
         return
 
     t = args.extract_plain_text().split(" ", 1)
     if t[0] == "":
-        return await cw_gene(bot, event, MessageChain([{"type": "Plain", "text": "1"}]))
+        return await cw_gene(
+            bot, event, cw, MessageChain([{"type": "Plain", "text": "1"}])
+        )
     if len(t) == 1:
         if t[0].isdigit():
             pi = int(t[0])
@@ -211,27 +188,3 @@ async def cw_gene(
     except Exception as e:
         await cw.send("[文案] 生成文案失败: " + str(e))
         raise e
-
-
-@cw.handle()
-async def cw_handle(bot: Bot, event: MessageEvent, args: MessageChain = CommandArg()):
-    await cw_gene(bot, event, args)
-
-
-@cw_p.handle()
-async def cw_p_handle(bot: Bot, event: MessageEvent, args: MessageChain = CommandArg()):
-    if not await SUPERUSER(bot=bot, event=event):
-        await cw_p.finish("[文案] 请使用 /cw 命令，政治安全模式")
-    await cw_gene(bot, event, args, PoliticsSafe=False)
-
-
-@manage.handle()
-async def handle_first_receive(cmd: Tuple[str, str] = Command()):
-    _, action = cmd
-    if action == "open":
-        plugin_config.cw = True
-    else:
-        plugin_config.cw = False
-    await manage.finish(
-        f"[文案] {action.capitalize()}{'d' if action[-1] == 'e' else 'ed'}"
-    )

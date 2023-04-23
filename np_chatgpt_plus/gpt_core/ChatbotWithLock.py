@@ -213,7 +213,7 @@ class AsyncChatbotWithLock(ChatbotWithLock):
                 auto_continue,
                 timeout,
                 model,
-            ):
+            ):  # type: ignore
                 yield i
 
     async def post(
@@ -287,38 +287,3 @@ def tokenize(prompt: str, model: str = "gpt-3.5-turbo") -> list[int]:
 def get_token_count(prompt: str, model: str = "gpt-3.5-turbo") -> int:
     """Get the token count of a prompt"""
     return len(tokenize(prompt, model)) + 10
-
-
-from nonebot.adapters import Bot, Event
-from nonebot.internal.permission import USER as USER
-from nonebot.internal.permission import User as User
-from nonebot.internal.permission import Permission as Permission
-import nonebot
-from .config import Config
-
-global_config = nonebot.get_driver().config
-plugin_config = Config.parse_obj(global_config)
-
-
-class GPTOwner(Permission):
-    """检查当前事件是否是消息事件且属于 GPT 超级用户。"""
-
-    __slots__ = ()
-
-    def __repr__(self) -> str:
-        return "Superuser()"
-
-    async def __call__(self, bot: Bot, event: Event) -> bool:
-        try:
-            user_id = event.get_user_id()
-        except Exception:
-            return False
-        return (
-            f"{bot.adapter.get_name().split(maxsplit=1)[0].lower()}:{user_id}"
-            in plugin_config.gpt_owner
-            or user_id in plugin_config.gpt_owner  # 兼容旧配置
-        )
-
-
-GPTOWNER: Permission = Permission(GPTOwner())
-"""匹配 GPT 超级用户事件"""

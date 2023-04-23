@@ -1,10 +1,10 @@
 from typing import Sequence
 from langchain.chains.summarize import load_summarize_chain
-from ..gpt_core.model import MessageRecord, ConversationId
-from ..gpt_core.record import remove_timezone
-from ..gpt_core.message import deserialize_message, simplify_message
-from ..gpt_core.chatgpt import GptAsk, llm
-from ..gpt_core.ChatbotWithLock import get_code_from_markdown, get_token_count
+from .model import MessageRecord, ConversationId
+from .gpt_core.record import remove_timezone
+from .gpt_core.message import deserialize_message, simplify_message
+from .gpt_core.chatgpt import GptAsk, llm
+from .gpt_core.ChatbotWithLock import get_code_from_markdown, get_token_count
 import nonebot, httpx, asyncio, random, traceback
 from langchain.docstore.document import Document
 from nonebot.adapters.mirai2 import Bot

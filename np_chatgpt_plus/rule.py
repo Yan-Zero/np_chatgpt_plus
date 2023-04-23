@@ -57,3 +57,27 @@ COUNT_LIMIT = Permission(RequestLimit())
 
 BAN: Permission = Permission(Ban())
 """匹配封禁用户事件"""
+
+
+class GPTOwner(Permission):
+    """检查当前事件是否是消息事件且属于 GPT 超级用户。"""
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "Superuser()"
+
+    async def __call__(self, bot: Bot, event: Event) -> bool:
+        try:
+            user_id = event.get_user_id()
+        except Exception:
+            return False
+        return (
+            f"{bot.adapter.get_name().split(maxsplit=1)[0].lower()}:{user_id}"
+            in plugin_config.gpt_owner
+            or user_id in plugin_config.gpt_owner  # 兼容旧配置
+        )
+
+
+GPTOWNER: Permission = Permission(GPTOwner())
+"""匹配 GPT 超级用户事件"""

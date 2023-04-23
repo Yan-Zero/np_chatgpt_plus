@@ -5,11 +5,12 @@ from nonebot_plugin_datastore import create_session
 from sqlalchemy import func, or_, select, delete, desc
 
 from .message import deserialize_message
-from .model import MessageRecord
+from ..model import MessageRecord
 from nonebot.adapters.mirai2 import Bot, SUPERUSER, GroupMessage
 from nonebot.adapters.mirai2.event import MessageEvent
 
 import nonebot.log as logger
+
 
 def remove_timezone(dt: datetime) -> datetime:
     """移除时区"""
@@ -18,6 +19,7 @@ def remove_timezone(dt: datetime) -> datetime:
     # 先转至 UTC 时间，再移除时区
     dt = dt.astimezone(timezone.utc)
     return dt.replace(tzinfo=None)
+
 
 async def get_message_records(
     *,
@@ -108,6 +110,7 @@ async def get_message_records(
         records = (await session.scalars(statement)).all()
     return records
 
+
 async def clear_message_records(
     *,
     bot_types: Optional[Iterable[str]] = None,
@@ -189,10 +192,11 @@ async def clear_message_records(
     if exclude_quote_ids:
         for quote_id in exclude_quote_ids:
             whereclause.append(MessageRecord.quote_id != quote_id)
-    
+
     statement = delete(MessageRecord).where(*whereclause)
     async with create_session() as session:
         await session.execute(statement)
+
 
 async def del_message_records_to_limit(max_count_per_group: int):
     """删除消息记录，使每个群组的消息记录数不超过 `max_count_per_group`
@@ -219,11 +223,11 @@ async def del_message_records_to_limit(max_count_per_group: int):
             .group_by(MessageRecord.group_id)
             .having(func.count(MessageRecord.id) > max_count_per_group)
         )
-        records= (await session.scalars(statement)).all()
+        records = (await session.scalars(statement)).all()
     for record in records:
         if record is None or record[0] is None:
             continue
-        await delete_records_by_key(session, 'group_id', record)
+        await delete_records_by_key(session, "group_id", record)
     logger.logger.info(f"删除了 {len(records)} 个群组的消息记录")
 
     statement = (
@@ -236,16 +240,16 @@ async def del_message_records_to_limit(max_count_per_group: int):
     for record in records:
         if record is None:
             continue
-        await delete_records_by_key(session, 'user_id', record)
+        await delete_records_by_key(session, "user_id", record)
     logger.logger.info(f"删除了 {len(records)} 个用户的消息记录")
 
 
 async def del_all_message_records():
-    """删除所有消息记录
-    """
+    """删除所有消息记录"""
     async with create_session() as session:
         await session.execute(delete(MessageRecord))
         await session.commit()
+
 
 # async def get_messages(bot: Bot, **kwargs) -> List[MessageEvent]:
 #     """获取消息记录的消息列表

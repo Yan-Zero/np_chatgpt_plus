@@ -2,12 +2,10 @@ import nonebot, httpx, asyncio, random
 from typing import Optional, List, AsyncGenerator
 from .ChatbotWithLock import (
     AsyncChatbotWithLock,
-    GPTOWNER,
     ChatbotWithLock,
     construct_message,
 )
-from .config import Config
-from .model import MessageRecord, ConversationId
+from ..model import MessageRecord, ConversationId
 import revChatGPT.typings as rct
 from .record import remove_timezone
 from .message import deserialize_message, simplify_message
@@ -20,6 +18,7 @@ from sqlalchemy import func, or_, select, delete, update
 from nonebot_plugin_datastore import get_plugin_data, create_session
 from langchain.llms.base import LLM
 from .api_handle import api_handle, user_api_manager
+from ..config import Config
 
 global_config = nonebot.get_driver().config
 plugin_config = Config.parse_obj(global_config)

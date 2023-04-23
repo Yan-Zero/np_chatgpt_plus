@@ -5,9 +5,10 @@ from nonebot_plugin_datastore import get_plugin_data
 from sqlalchemy import JSON, TEXT, String, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
-from .message import JsonMsg
+from .gpt_core.message import JsonMsg
 
 Model = get_plugin_data().Model
+
 
 class ConversationId(Model):
     """会话id"""
@@ -24,8 +25,10 @@ class ConversationId(Model):
 
     def __repr__(self):
         return f"<ConversationId {self.id}>[{self.__dict__}]"
+
     def __str__(self):
         return f"<ConversationId {self.id}>[{self.__dict__}]"
+
 
 class MessageRecord(Model):
     """消息记录"""
@@ -57,5 +60,6 @@ class MessageRecord(Model):
 
     def __repr__(self):
         return f"<MessageRecord {self.id}>[{self.__dict__}]"
+
     def __str__(self):
         return f"<MessageRecord {self.id}>[{self.__dict__}]"
