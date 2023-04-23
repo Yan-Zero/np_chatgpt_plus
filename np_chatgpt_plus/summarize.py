@@ -1,14 +1,18 @@
 from typing import Sequence
-from nonebot.adapters.mirai2 import Bot
+from nonebot_plugin_chatrecorder import MessageRecord
+from nonebot_plugin_chatrecorder.message import deserialize_message, V12Msg
+from nonebot.adapters.onebot.v12 import Bot
 from langchain.prompts import PromptTemplate
 from langchain.docstore.document import Document
 from langchain.chains.summarize import load_summarize_chain
-from .gpt_core.message import simplify_message
 from .gpt_core.chatbot_with_lock import get_token_count
-from .model import MessageRecord, deserialize_message
 
 
 class SummarizeLog:
+    """
+    Summarize conversation log.
+    """
+
     PROMPT_INIT = PromptTemplate(
         template="""````template
     整体感情: ...
@@ -81,7 +85,7 @@ class SummarizeLog:
             user_name = "ID " + str(user_name)
             text = text.replace(
                 user_name,
-                f"{(await bot.user_profile(target=int(user_id)))['nickname']}({user_id})",
+                f"{(await bot.get_user_info(user_id=user_id))['user_name']}({user_id})",
             )
         return text
 
@@ -106,7 +110,7 @@ class SummarizeLog:
         conversation_log = []
         t = ""
         for msg in msgs:
-            message = simplify_message(deserialize_message(msg.message))
+            message = repr((deserialize_message(msg.message, V12Msg)))
             if (
                 msg.type == "s"
                 and "用词最不友善ID的是" in message

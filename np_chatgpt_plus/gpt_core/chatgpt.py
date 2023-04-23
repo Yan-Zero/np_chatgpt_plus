@@ -1,22 +1,23 @@
-import httpx, asyncio, random
 from typing import Optional, List, AsyncGenerator
+import asyncio
+import random
+import httpx
+import revChatGPT.typings as rct
+from datetime import datetime, timedelta
+from nonebot.adapters.onebot.v12 import Bot
+from nonebot.adapters.onebot.v12.event import MessageEvent
+from nonebot.adapters.onebot.v12.message import Message, MessageSegment
+from sqlalchemy import select, update
+from nonebot_plugin_datastore import create_session
+from nonebot_plugin_chatrecorder import MessageRecord
+from nonebot_plugin_chatrecorder.message import deserialize_message, V12Msg
+from langchain.llms.base import LLM
+from .api_handle import user_api_manager
 from .chatbot_with_lock import (
     AsyncChatbotWithLock,
     ChatbotWithLock,
     construct_message,
 )
-from ..model import ConversationId
-import revChatGPT.typings as rct
-from .record import remove_timezone
-from .message import simplify_message
-from nonebot.adapters.mirai2 import Bot
-from nonebot.adapters.mirai2.event import MessageEvent
-from nonebot.adapters.mirai2.message import MessageType, MessageSegment, MessageChain
-from datetime import datetime, timedelta
-from sqlalchemy import select, update
-from nonebot_plugin_datastore import create_session
-from langchain.llms.base import LLM
-from .api_handle import user_api_manager
 
 
 class ChatGPT_LLM(LLM):
@@ -26,7 +27,7 @@ class ChatGPT_LLM(LLM):
     def __init__(self, chatbot, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.cid = kwargs.get("cid", None)
-        self.chatbot = kwargs.get("chatbot", None)
+        self.chatbot = chatbot
 
     @property
     def _llm_type(self) -> str:
@@ -192,17 +193,19 @@ class GPTCore:
 
         await self.ResetConversation("20")
 
-    async def chat_bot(self, bot: Bot, msg: MessageEvent, message_chain) -> list[dict]:
-        if msg.quote:
-            message_chain = (
-                MessageSegment(type=MessageType.QUOTE, **msg.quote.__dict__)
-                + message_chain
+    async def chat_bot(self, bot: Bot, msg: MessageEvent, v12msg) -> list[dict]:
+        text = ""
+        if msg.reply:
+            statement = select(MessageRecord).where(
+                MessageRecord.message_id == msg.reply.message_id
             )
-        text = simplify_message(message_chain, True).strip()
+            async with create_session() as session:
+                records = (await session.scalars(statement)).all()
+            if records:
+                text = f"Reply: {repr(deserialize_message(records[0].message, V12Msg))}\n\n"
+        text += repr(v12msg)
         user_id = msg.get_user_id()
-        self.user_bot_last_time[user_id] = (
-            msg.source.time if msg.source else datetime.utcnow()
-        )
+        self.user_bot_last_time[user_id] = msg.time
         result = {}
 
         available_api = user_api_manager.get_active_apis(user_id)
@@ -352,7 +355,7 @@ class GPTCore:
                         await self.reset_chat_bot(
                             bot,
                             id,
-                            (await bot.user_profile(target=int(id)))["nickname"],
+                            (await bot.get_user_info(user_id=id))["user_name"],
                         )
                         + "\n"
                     )

@@ -1,35 +1,34 @@
+"""
+
+"""
+import datetime
+import httpx
 import nonebot
 
 nonebot.require("nonebot_plugin_datastore")
+nonebot.require("nonebot_plugin_chatrecorder")
+from revChatGPT.typings import Error as CBTError
 import nonebot.plugin, nonebot.rule
-import httpx, nonebot, datetime
-from nonebot.adapters.mirai2 import (
-    Bot,
-    SUPERUSER,
-    GroupMessage,
-    FriendMessage,
-    MessageChain,
+from nonebot.adapters.onebot.v12 import Bot
+from nonebot.adapters.onebot.v12.event import (
+    MessageEvent,
+    GroupMessageEvent,
+    PrivateMessageEvent,
 )
-from nonebot.adapters.mirai2.event import MessageEvent, Event
+from nonebot.adapters.onebot.v12.permission import GROUP, PRIVATE
 from nonebot.adapters import Bot as BaseBot
-from nonebot.adapters.mirai2.message import MessageType, MessageSegment
+from nonebot.adapters.onebot.v12.message import Message as V12Msg
+from nonebot.adapters.onebot.v12.message import MessageSegment
 from nonebot.params import CommandArg, Command
 from nonebot_plugin_datastore import get_plugin_data, create_session
 from nonebot.message import event_postprocessor
 from typing import Optional, Dict, Any
 from nonebot_plugin_datastore.db import post_db_init
-from sqlalchemy import func, or_, select, delete, desc
-from .rule import BAN, COUNT_LIMIT, GPTOWNER
-from .model import MessageRecord, ConversationId
+from nonebot_plugin_chatrecorder import get_message_records
+from nonebot.adapters.onebot.v12.bot import send
+from .rule import BAN, COUNT_LIMIT, GPTOWNER, SUPERUSER
+from .model import ConversationId
 from .gpt_core import GPTCore
-from revChatGPT.typings import Error as CBTError
-from .gpt_core.record import (
-    remove_timezone,
-    get_message_records,
-    del_message_records_to_limit,
-    clear_message_records,
-    del_all_message_records,
-)
 from .gpt_core.api_handle import user_api_manager
 from .config import Config
 
@@ -90,10 +89,10 @@ unban = nonebot.on_command("unban", priority=10, block=True, permission=GPTOWNER
 
 
 @rule_.handle()
-async def handle_ban(bot: Bot, event: MessageEvent, args: MessageChain = CommandArg()):
+async def handle_ban(args: V12Msg = CommandArg()):
     if not args:
         await rule_.finish("参数错误")
-    lists = [str(x.data["target"]) for x in args if x.type == MessageType.AT]
+    lists = [x.data["user_id"] for x in args if x.type == "mention"]
     lists.extend([x for x in args.extract_plain_text().split(" ") if x.isdigit()])
     lists = set(lists)
     lists.update(await plugin_data.config.get("ban", set()))
@@ -102,12 +101,10 @@ async def handle_ban(bot: Bot, event: MessageEvent, args: MessageChain = Command
 
 
 @unban.handle()
-async def handle_unban(
-    bot: Bot, event: MessageEvent, args: MessageChain = CommandArg()
-):
+async def handle_unban(args: V12Msg = CommandArg()):
     if not args:
         await unban.finish("参数错误")
-    lists = [str(x.data["target"]) for x in args if x.type == MessageType.AT]
+    lists = [x.data["user_id"] for x in args if x.type == "mention"]
     lists.extend([x for x in args.extract_plain_text().split(" ") if x.isdigit()])
     result: set = set(await plugin_data.config.get("ban", []))
     result.difference_update(lists)
@@ -120,9 +117,7 @@ async def handle_api_docs(bot: Bot, event: MessageEvent, args=CommandArg()):
     # /api_docs [api_key]
     args = args.extract_plain_text().strip()
     if not args:
-        await handle_api_docs(
-            bot, event, MessageChain([{"type": "Plain", "text": "1"}])
-        )
+        await handle_api_docs(bot, event, V12Msg("1"))
         return
     elif args.isdigit():
         page = int(args)
@@ -157,7 +152,7 @@ api_key:
 
 @set_.handle()
 async def handle_set(bot: Bot, event: MessageEvent, args=CommandArg()):
-    lists = [str(x.data["target"]) for x in args if x.type == MessageType.AT]
+    lists = [x.data["user_id"] for x in args if x.type == "mention"]
     args = args.extract_plain_text()
     args = args.split(" ")
     if len(args) < 2:
@@ -195,14 +190,16 @@ async def handle_was_mention(bot: Bot, event: MessageEvent):
 
 
 @gpt4.handle()
-async def handle_gpt4(bot: Bot, event: MessageEvent, args: MessageChain = CommandArg()):
-    if id := args.extract_first(MessageType.AT):
-        id = str(id.data["target"])
+async def handle_gpt4(bot: Bot, event: MessageEvent, args: V12Msg = CommandArg()):
+    if id := args.get("mention", 1):
+        id = id[0].data["user_id"]
     else:
         id = args.extract_plain_text().strip() or event.get_user_id()
-
+    id = id or event.get_user_id()
     if id:
-        result = await create_chat_bot(id if id else event.get_user_id(), "gpt-4", nickname=(await bot.user_profile(target=(int(id))))["nickname"])  # type: ignore
+        result = await GPTCORE.create_chat_bot(
+            id, "gpt-4", nickname=(await bot.get_user_info(user_id=id))["user_name"]
+        )
         await gpt4.finish(result)
 
 
@@ -222,7 +219,7 @@ async def handle_chatbot(bot: Bot, event: MessageEvent, args=CommandArg()):
         await chatbot.finish("获取用户信息失败")
 
     if not args:
-        args = event.message_chain
+        args = event.message
 
     data = await plugin_data.config.get("request_limit", {})
     last_time = data.get("last_time", "")
@@ -247,35 +244,39 @@ async def handle_chatbot(bot: Bot, event: MessageEvent, args=CommandArg()):
     try:
         result = await GPTCORE.chat_bot(bot, event, args)
         if len(result) > 1:
-            nickname = (await bot.bot_profile())["nickname"]
+            nickname = bot.config.nickname
             # 构造成转发消息的形式
             nodeList = [
                 {
-                    "senderId": event.self_id if not i["recipient"] else 10000,
-                    "time": int(datetime.datetime.now().timestamp()),
-                    "senderName": i["recipient"] or nickname,
-                    "messageChain": i["message"].export(),
+                    "type": "node",
+                    "data": {
+                        "name": i["recipient"] or nickname,
+                        "uin": bot.self_id if not i["recipient"] else "10000",
+                        "content": repr(i["message"]),
+                    },
                 }
                 for i in result[:-1]
             ]
+
             try:
-                await chatbot.send(
-                    message=MessageChain(
-                        MessageSegment(
-                            type=MessageType.FORWARD,
-                            nodeList=nodeList,
-                            display={
-                                "title": "GPT的调用记录",
-                                "brief": "[调用记录]",
-                                "source": "调用记录",
-                                "preview": [
-                                    f"{nodeList[0]['senderName']}: {result[0]['message'].extract_plain_text()}..."
-                                ],
-                                "summary": "点击查看调用记录",
-                            },
-                        )
-                    ),
-                )
+                # await chatbot.send(
+                #     message=V12Msg(
+                #         MessageSegment(
+                #             type=MessageType.FORWARD,
+                #             nodeList=nodeList,
+                #             display={
+                #                 "title": "GPT的调用记录",
+                #                 "brief": "[调用记录]",
+                #                 "source": "调用记录",
+                #                 "preview": [
+                #                     f"{nodeList[0]['senderName']}: {result[0]['message'].extract_plain_text()}..."
+                #                 ],
+                #                 "summary": "点击查看调用记录",
+                #             },
+                #         )
+                #     ),
+                # )
+                chatbot.send(message=V12Msg())
             except Exception as ex:
                 nodeList = [
                     {
@@ -306,11 +307,12 @@ async def handle_chatbot(bot: Bot, event: MessageEvent, args=CommandArg()):
                         )
                     ),
                 )
-        await bot.send(
+        await send(
+            bot=bot,
             event=event,
             message=result[-1]["message"],
             at_sender=False,
-            quote=event.source.id if event.source else None,
+            reply_message=True,
         )
     except TimeoutError:
         await chatbot.send("请求超时，请稍后再试")
@@ -328,26 +330,27 @@ async def handle_chatbot(bot: Bot, event: MessageEvent, args=CommandArg()):
 
 
 @reset.handle()
-async def handle_reset(
-    bot: Bot, event: MessageEvent, args: MessageChain = CommandArg()
-):
+async def handle_reset(bot: Bot, event: MessageEvent, args: V12Msg = CommandArg()):
     if await SUPERUSER(bot=bot, event=event):
         if args.extract_plain_text() == "all":
             await reset.finish(await GPTCORE.reset_chat_bot(bot, "all", "all"))
-        lists = [str(x.data["target"]) for x in args if x.type == MessageType.AT]
+        lists = [x.data["user_id"] for x in args if x.type == "mention"]
         lists.extend([x for x in args.extract_plain_text().split(" ") if x.isdigit()])
         if lists:
             for id in lists:
-                result = await GPTCORE.reset_chat_bot(bot, id, (await bot.user_profile(target=int(id)))["nickname"])
+                result = await GPTCORE.reset_chat_bot(
+                    bot, id, (await bot.get_user_info(user_id=id))["user_name"]
+                )
                 await reset.send(result)
             return
 
     try:
-        nickname = event.sender.name if isinstance(event, GroupMessage) else event.sender.nickname  # type: ignore
-        result = await GPTCORE.reset_chat_bot(bot, event.get_user_id(), nickname)
-        await bot.send(
-            event=event, message=result, quote=event.source.id if event.source else None
+        result = await GPTCORE.reset_chat_bot(
+            bot,
+            event.get_user_id(),
+            (await bot.get_user_info(user_id=event.get_user_id()))["user_name"],
         )
+        await send(bot=bot, event=event, message=result, reply_message=True)
     except Exception as e:
         if isinstance(e, TimeoutError):
             await reset.send("请求超时，请稍后再试")
@@ -359,96 +362,6 @@ async def handle_reset(
         else:
             await reset.send("未知错误，请稍后再试：\n{e}\n{eargs}".format(e=e, eargs=e.args))
             raise e
-
-
-@clear_record.handle()
-async def handle_clear_record(bot: Bot, event: MessageEvent, args=CommandArg()):
-    args = args.extract_plain_text()
-    if args == "all":
-        async with create_session() as session:
-            stms = delete(ConversationId)
-            await session.execute(stms)
-            await session.commit()
-        await del_all_message_records()
-        await clear_record.finish("已清空所有记录")
-
-    if args == "this":
-        if isinstance(event, GroupMessage):
-            await clear_message_records(group_ids=[str(event.sender.group.id)])
-            await clear_record.send(f"已清空群{event.sender.group.id}的记录")
-        else:
-            await clear_record.finish("请在群聊中使用")
-    if args.isdigit():
-        await clear_message_records(user_ids=[args], detail_types=["friend", "others"])
-        await clear_record.finish(f"已清空用户{args}的记录")
-
-    await del_message_records_to_limit(plugin_config.max_length)
-    await plugin_data.config.set(
-        "last_clear_time", datetime.datetime.utcnow().timestamp()
-    )
-    await clear_record.finish(f"已清空剩余 {plugin_config.max_length} 条记录")
-
-
-@event_postprocessor
-async def record_recv_msg_mirai2(bot: Bot, event: MessageEvent):
-    record = MessageRecord(
-        bot_type=bot.type,
-        bot_id=bot.self_id,
-        platform="qq",
-        time=remove_timezone(
-            event.source.time if event.source else datetime.datetime.now()
-        ),
-        type="s" if event.sender.id == bot.self_id else "r",
-        detail_type="friend"
-        if isinstance(event, FriendMessage)
-        else "group"
-        if isinstance(event, GroupMessage)
-        else "others",
-        message_id=str(event.source.id if event.source else 0),
-        message=event.message_chain.export(),
-        user_id=str(event.sender.id),
-        group_id=str(event.sender.group.id)
-        if isinstance(event, GroupMessage)
-        else None,
-        quote_id=str(event.quote.id) if event.quote else None,
-    )  # type: ignore
-    async with create_session() as session:
-        session.add(record)
-        await session.commit()
-
-
-@Bot.on_called_api
-async def record_send_msg_mirai2(
-    bot: BaseBot,
-    e: Optional[Exception],
-    api: str,
-    data: Dict[str, Any],
-    result: Optional[Dict[str, Any]],
-):
-    if e or not result:
-        return
-    if api[:5] != "send_" or api[-8:] != "_message":
-        return
-    record = MessageRecord(
-        bot_type=bot.type,
-        bot_id=bot.self_id,
-        platform="qq",
-        time=remove_timezone(datetime.datetime.now()),
-        type="s",
-        detail_type="friend"
-        if api == "send_friend_message"
-        else "group"
-        if api == "send_group_message"
-        else "others",
-        message_id=result["messageId"],
-        message=data["message_chain"].export(),
-        user_id=str(data["target"]) if "target" in data else bot.self_id,
-        group_id=str(data["group"]) if "group" in data else None,
-        quote_id=data["quote"] if "quote" in data else None,
-    )
-    async with create_session() as session:
-        session.add(record)
-        await session.commit()
 
 
 @manage.handle()
@@ -464,10 +377,8 @@ async def handle_manager(cmd: tuple[str, str] = Command()):
         )
 
 
-from typing import Tuple
 import traceback
 from .summarize import SummarizeLog
-from .copywriting import cw_gene
 
 SUMMARIZER = SummarizeLog(GPTCORE.llm)
 summarize_ = nonebot.plugin.on_command(
@@ -494,19 +405,20 @@ async def handle_summarize(bot: Bot, event: MessageEvent):
         )
         await handle_clear_record(bot, event, "")
 
-    if isinstance(event, GroupMessage):
+    if isinstance(event, GroupMessageEvent):
         records = await get_message_records(
-            group_ids=[str(event.sender.group.id)],
+            group_ids=[event.group_id],
             time_start=datetime.datetime.utcnow() - datetime.timedelta(days=1),
         )
-    elif isinstance(event, FriendMessage):
+    elif isinstance(event, PrivateMessageEvent):
         records = await get_message_records(
-            user_ids=[str(event.sender.id)],
-            detail_types=["friend", "others"],
+            user_ids=[event.get_user_id()],
+            detail_types=["private"],
             time_start=datetime.datetime.utcnow() - datetime.timedelta(days=1),
         )
     else:
         return
+
     try:
         result = await SUMMARIZER.summarize_message(bot, records)
         await summarize_.send(result)
@@ -523,39 +435,3 @@ async def handle_summarize(bot: Bot, event: MessageEvent):
         else:
             await summarize_.send("未知错误，请稍后再试：\n{e}\n{eargs}".format(e=e, eargs=e.args))
             raise e
-
-
-cw = nonebot.plugin.on_command("cw", priority=4, block=True)
-manage = nonebot.plugin.on_command(
-    ("cw", "oepn"),
-    rule=nonebot.rule.to_me(),
-    aliases={("cw", "close")},
-    permission=SUPERUSER,
-    block=True,
-    priority=2,
-)
-cw_p = nonebot.plugin.on_command(("cw", "p"), priority=3, block=True)
-
-
-@cw.handle()
-async def cw_handle(bot: Bot, event: MessageEvent, args: MessageChain = CommandArg()):
-    await cw_gene(bot, event, args, cw)
-
-
-@cw_p.handle()
-async def cw_p_handle(bot: Bot, event: MessageEvent, args: MessageChain = CommandArg()):
-    if not await SUPERUSER(bot=bot, event=event):
-        await cw_p.finish("[文案] 请使用 /cw 命令，政治安全模式")
-    await cw_gene(bot, event, args, cw, PoliticsSafe=False)
-
-
-@manage.handle()
-async def handle_first_receive(cmd: Tuple[str, str] = Command()):
-    _, action = cmd
-    if action == "open":
-        plugin_config.cw = True
-    else:
-        plugin_config.cw = False
-    await manage.finish(
-        f"[文案] {action.capitalize()}{'d' if action[-1] == 'e' else 'ed'}"
-    )

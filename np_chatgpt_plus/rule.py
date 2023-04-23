@@ -1,10 +1,13 @@
+""" 
+This module is used to define the permission of the bot.
+"""
+
 import nonebot
 from nonebot.adapters import Bot, Event
-from nonebot.internal.permission import USER as USER
-from nonebot.internal.permission import User as User
-from nonebot.internal.permission import Permission as Permission
-from .config import Config
 from nonebot_plugin_datastore import get_plugin_data
+from nonebot.internal.permission import Permission
+from nonebot.permission import SUPERUSER
+from .config import Config
 
 plugin_data = get_plugin_data()
 global_config = nonebot.get_driver().config
@@ -49,13 +52,6 @@ class RequestLimit(Permission):
         ) < plugin_config.request_limit
 
 
-COUNT_LIMIT = Permission(RequestLimit())
-"""匹配请求次数超过限制的用户事件"""
-
-BAN: Permission = Permission(Ban())
-"""匹配封禁用户事件"""
-
-
 class GPTOwner(Permission):
     """检查当前事件是否是消息事件且属于 GPT 超级用户。"""
 
@@ -78,3 +74,9 @@ class GPTOwner(Permission):
 
 GPTOWNER: Permission = Permission(GPTOwner())
 """匹配 GPT 超级用户事件"""
+
+COUNT_LIMIT = Permission(RequestLimit())
+"""匹配请求次数超过限制的用户事件"""
+
+BAN: Permission = Permission(Ban())
+"""匹配封禁用户事件"""
