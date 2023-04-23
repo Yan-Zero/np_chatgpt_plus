@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="np_chatgpt_plus",
-    version="0.2.0",
+    version="0.2.1",
     author="Yan",
     author_email="1964649083@qq.com",
     description="A Chatbot Framework for Nonebot2",
