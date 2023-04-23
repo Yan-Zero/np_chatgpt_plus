@@ -144,7 +144,7 @@ async def cw_gene(
         return await cw.finish("[文案] 未找到文案")
     try:
         result = ""
-        async for msg in OnceAsk(prompt, politics_safe=PoliticsSafe):  # type: ignore
+        async for msg in GPTCORE.OnceAsk(prompt, politics_safe=PoliticsSafe):
             result = msg["message"]
         result = result.strip()
 

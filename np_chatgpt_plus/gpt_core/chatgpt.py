@@ -138,7 +138,7 @@ class GPTCore:
 
         try:
             t = {}
-            async for reply in cbt.ask(strs, cid, model=model, auto_continue=complete):  # type: ignore
+            async for reply in self.cbt.ask(strs, cid, model=model, auto_continue=complete):
                 t = reply
                 yield t
             cid = t.get("conversation_id", cid)
@@ -149,7 +149,7 @@ class GPTCore:
             if self.try_time[hash(strs)] < 3 and e.response.status_code in [404]:
                 print(e, e.args)
                 await asyncio.sleep(3)
-                async for reply in GptAsk(strs, False, id, complete=complete):  # type: ignore
+                async for reply in self.GptAsk(strs, False, id, complete=complete): # type: ignore
                     cid = reply.get("conversation_id", cid)
                     yield reply
                 self.user_bot_cid[id] = cid
@@ -159,7 +159,7 @@ class GPTCore:
             if self.try_time[hash(strs)] < 3 and e.code in [404]:
                 print(e, e.args)
                 await asyncio.sleep(3)
-                async for reply in GptAsk(strs, False, id, complete=complete):  # type: ignore
+                async for reply in self.GptAsk(strs, False, id, complete=complete):  # type: ignore
                     cid = reply.get("conversation_id", cid)
                     yield reply
                 self.user_bot_cid[id] = cid
