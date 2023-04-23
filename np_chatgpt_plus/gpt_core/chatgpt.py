@@ -1,43 +1,23 @@
-import nonebot, httpx, asyncio, random
+import httpx, asyncio, random
 from typing import Optional, List, AsyncGenerator
 from .ChatbotWithLock import (
     AsyncChatbotWithLock,
     ChatbotWithLock,
     construct_message,
 )
-from ..model import MessageRecord, ConversationId
+from ..model import ConversationId
 import revChatGPT.typings as rct
 from .record import remove_timezone
-from .message import deserialize_message, simplify_message
+from .message import simplify_message
 from nonebot.adapters.mirai2 import Bot
 from nonebot.adapters.mirai2.event import MessageEvent
 from nonebot.adapters.mirai2.message import MessageType, MessageSegment, MessageChain
 from datetime import datetime, timedelta
 from nonebot_plugin_datastore.db import post_db_init
-from sqlalchemy import func, or_, select, delete, update
-from nonebot_plugin_datastore import get_plugin_data, create_session
+from sqlalchemy import select, update
+from nonebot_plugin_datastore import create_session
 from langchain.llms.base import LLM
-from .api_handle import api_handle, user_api_manager
-from ..config import Config
-
-global_config = nonebot.get_driver().config
-plugin_config = Config.parse_obj(global_config)
-cbt_config = {
-    # "proxy": plugin_config.proxy,
-    "paid": plugin_config.paid,
-    "access_token": plugin_config.access_token,
-    "model": plugin_config.model,
-}
-if plugin_config.proxy:
-    cbt_config["proxy"] = plugin_config.proxy
-if plugin_config.cf_clearance:
-    if not plugin_config.cf_clearance_ua:
-        raise ValueError("cf_clearance_ua is required.")
-    cbt_config["cf_clearance_ua"] = plugin_config.cf_clearance_ua
-    cbt_config["cf_clearance"] = plugin_config.cf_clearance
-cbt = AsyncChatbotWithLock(
-    config=cbt_config,
-)
+from .api_handle import user_api_manager
 
 
 class ChatGPT_LLM(LLM):
@@ -74,8 +54,18 @@ class ChatGPT_LLM(LLM):
         self.cid = None
 
 
-llm = ChatGPT_LLM(chatbot=cbt)
-user_bot_model: dict[str, str] = {"0": plugin_config.model}
+cbt: AsyncChatbotWithLock
+user_bot_model: dict[str, str]
+llm: ChatGPT_LLM
+
+
+def init(*args, **kwargs):
+    global cbt, user_bot_model, llm
+    cbt = AsyncChatbotWithLock(config=kwargs["cbt_config"])
+    user_bot_model = {"0": kwargs["plugin_config"].model}
+    llm = ChatGPT_LLM(chatbot=cbt)
+
+
 user_bot_cid: dict[str, str | None] = {}
 """ 用户的会话ID，key为用户QQ号，value为会话ID 
     0:    用于普通的GptAsk，不保留会话

@@ -29,7 +29,9 @@ from .gpt_core.chatgpt import (
     user_bot_cid,
     llm,
     rct,
+    init,
 )
+from .gpt_core.chatgpt import AsyncChatbotWithLock
 from .gpt_core.record import (
     remove_timezone,
     get_message_records,
@@ -43,6 +45,20 @@ from .gpt_core.api_handle import api_handle, user_api_manager
 global_config = nonebot.get_driver().config
 plugin_config = Config.parse_obj(global_config)
 plugin_data = get_plugin_data()
+cbt_config = {
+    # "proxy": plugin_config.proxy,
+    "paid": plugin_config.paid,
+    "access_token": plugin_config.access_token,
+    "model": plugin_config.model,
+}
+if plugin_config.proxy:
+    cbt_config["proxy"] = plugin_config.proxy
+if plugin_config.cf_clearance:
+    if not plugin_config.cf_clearance_ua:
+        raise ValueError("cf_clearance_ua is required.")
+    cbt_config["cf_clearance_ua"] = plugin_config.cf_clearance_ua
+    cbt_config["cf_clearance"] = plugin_config.cf_clearance
+init(cbt_config=cbt_config, plugin_config=plugin_config)
 
 clear_record = nonebot.plugin.on_command(
     "clear",
