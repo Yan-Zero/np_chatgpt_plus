@@ -246,67 +246,25 @@ async def handle_chatbot(bot: Bot, event: MessageEvent, args=CommandArg()):
         if len(result) > 1:
             nickname = bot.config.nickname
             # 构造成转发消息的形式
-            nodeList = [
-                {
-                    "type": "node",
-                    "data": {
-                        "name": i["recipient"] or nickname,
-                        "uin": bot.self_id if not i["recipient"] else "10000",
-                        "content": repr(i["message"]),
-                    },
-                }
-                for i in result[:-1]
-            ]
+            nodeList = V12Msg(
+                [
+                    MessageSegment(
+                        type="node",
+                        data={
+                            "user_id": i["recipient"] or nickname,
+                            "user_name": bot.self_id if not i["recipient"] else "10000",
+                            "time": int(datetime.datetime.now().timestamp()),
+                            "message": i["message"],
+                        },
+                    )
+                    for i in result[:-1]
+                ]
+            )
 
             try:
-                # await chatbot.send(
-                #     message=V12Msg(
-                #         MessageSegment(
-                #             type=MessageType.FORWARD,
-                #             nodeList=nodeList,
-                #             display={
-                #                 "title": "GPT的调用记录",
-                #                 "brief": "[调用记录]",
-                #                 "source": "调用记录",
-                #                 "preview": [
-                #                     f"{nodeList[0]['senderName']}: {result[0]['message'].extract_plain_text()}..."
-                #                 ],
-                #                 "summary": "点击查看调用记录",
-                #             },
-                #         )
-                #     ),
-                # )
-                chatbot.send(message=V12Msg())
+                await chatbot.send(message=nodeList)
             except Exception as ex:
-                nodeList = [
-                    {
-                        "senderId": 10000,
-                        "time": int(datetime.datetime.now().timestamp()),
-                        "senderName": "Error Info",
-                        "messageChain": MessageChain(str(ex)).export(),
-                    },
-                    {
-                        "senderId": 10000,
-                        "time": int(datetime.datetime.now().timestamp()),
-                        "senderName": "Node List",
-                        "messageChain": MessageChain(str(nodeList)).export(),
-                    },
-                ]
-                await chatbot.send(
-                    message=MessageChain(
-                        MessageSegment(
-                            type=MessageType.FORWARD,
-                            nodeList=nodeList,
-                            display={
-                                "title": "GPT的错误信息",
-                                "brief": "[错误信息]",
-                                "source": "错误信息",
-                                "preview": [f"{nodeList[0]['senderName']}: {ex}..."],
-                                "summary": "点击查看错误信息",
-                            },
-                        )
-                    ),
-                )
+                await chatbot.send(message=V12Msg("合并消息失败。\n" + str(ex) + str(ex.args)))
         await send(
             bot=bot,
             event=event,
@@ -395,16 +353,6 @@ summarize_ = nonebot.plugin.on_command(
 async def handle_summarize(bot: Bot, event: MessageEvent):
     await summarize_.send("正在处理，请稍后...")
 
-    t = (
-        await plugin_data.config.get("last_clear_time")
-        or datetime.datetime.utcnow().timestamp()
-    )
-    if (datetime.datetime.utcnow() - datetime.datetime.utcfromtimestamp(t)).days > 0:
-        await plugin_data.config.set(
-            "last_clear_time", datetime.datetime.utcnow().timestamp()
-        )
-        await handle_clear_record(bot, event, "")
-
     if isinstance(event, GroupMessageEvent):
         records = await get_message_records(
             group_ids=[event.group_id],
@@ -435,3 +383,6 @@ async def handle_summarize(bot: Bot, event: MessageEvent):
         else:
             await summarize_.send("未知错误，请稍后再试：\n{e}\n{eargs}".format(e=e, eargs=e.args))
             raise e
+
+
+from .copywriting import cw

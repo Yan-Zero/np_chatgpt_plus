@@ -11,6 +11,7 @@ from sqlalchemy import select, update
 from nonebot_plugin_datastore import create_session
 from nonebot_plugin_chatrecorder import MessageRecord
 from nonebot_plugin_chatrecorder.message import deserialize_message, V12Msg
+from nonebot_plugin_chatrecorder.record import remove_timezone
 from langchain.llms.base import LLM
 from .api_handle import user_api_manager
 from .chatbot_with_lock import (
@@ -18,6 +19,7 @@ from .chatbot_with_lock import (
     ChatbotWithLock,
     construct_message,
 )
+from ..model import ConversationId
 
 
 class ChatGPT_LLM(LLM):
@@ -284,11 +286,7 @@ class GPTCore:
             recipient_log.append(
                 {
                     "recipient": "",
-                    "message": MessageChain(
-                        message=[
-                            MessageSegment(MessageType.PLAIN, text=result["message"])
-                        ]
-                    ),
+                    "message": MessageSegment.text(result["message"]),
                 }
             )
             data = {}
@@ -302,14 +300,7 @@ class GPTCore:
                 recipient_log.append(
                     {
                         "recipient": result["recipient"],
-                        "message": MessageChain(
-                            message=[
-                                MessageSegment(
-                                    MessageType.PLAIN,
-                                    text=message["content"]["parts"][0],
-                                )
-                            ]
-                        )
+                        "message": MessageSegment.text(message["content"]["parts"][0])
                         if not "qq_message" in message
                         else message["qq_message"],
                     }
@@ -326,25 +317,16 @@ class GPTCore:
             await session.execute(st)
             await session.commit()
         recipient_log.append(
-            {
-                "recipient": "",
-                "message": MessageChain(
-                    message=[
-                        MessageSegment(
-                            MessageType.PLAIN, text=result["message"].strip()
-                        )
-                    ]
-                ),
-            }
+            {"recipient": "", "message": MessageSegment.text(result["message"].strip())}
         )
         return recipient_log
 
     async def create_chat_bot(
         self, user_id: str, model: str, nickname: str = ""
-    ) -> MessageChain:
+    ) -> MessageSegment:
         self.user_bot_model[user_id] = model
         nickname = nickname or user_id
-        return MessageChain(f"{nickname}({user_id})的ChatGPT模型已经改为{model}")
+        return MessageSegment.text(f"{nickname}({user_id})的ChatGPT模型已经改为{model}")
 
     async def reset_chat_bot(self, bot: Bot, user_id: str, nickname) -> str:
         result = ""

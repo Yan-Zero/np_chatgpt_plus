@@ -23,7 +23,6 @@ cw_dirs = [
     for dir_name in os.listdir(plugin_config.cw_path)
     if os.path.isdir(os.path.join(plugin_config.cw_path, dir_name))
 ]
-cw_tokens = {}
 cache = {}
 cw = nonebot.plugin.on_command("cw", priority=4, block=True)
 cw_p = nonebot.plugin.on_command(("cw", "p"), priority=3, block=True)
@@ -131,9 +130,7 @@ def get_cw(keyword: str, topic: str, info: Optional[str] = None):
             encoding="utf-8",
         ) as f:
             s = f.read().strip()
-            cw_tokens[keyword] = cw_tokens.get(keyword, 0) + get_token_count(s)
             prompt += ["````example\n" + s + "\n````\n"]
-    cw_tokens[keyword] = cw_tokens.get(keyword, 0) // (len(prompt) - 1)
     if T:
         if get_token_count("".join(prompt)) > 3000:
             prompt[-1] = T
@@ -205,10 +202,7 @@ async def cw_gene(
                 reply_message=True,
             )
         result = result.strip("<Over>").strip()
-        if (
-            result
-            and cw_tokens[t[0]] / 1.7 < get_token_count(result) < cw_tokens[t[0]] * 1.7
-        ):
+        if result:
             await send(
                 bot=bot,
                 event=event,
