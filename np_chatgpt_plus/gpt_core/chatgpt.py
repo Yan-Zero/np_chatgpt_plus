@@ -3,7 +3,7 @@ import asyncio
 import random
 import httpx
 import revChatGPT.typings as rct
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from nonebot.adapters.onebot.v11 import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
@@ -18,6 +18,16 @@ from .chatbot_with_lock import (
     ChatbotWithLock,
     construct_message,
 )
+from ..model import ConversationId
+
+
+def remove_timezone(dt: datetime) -> datetime:
+    """移除时区"""
+    if dt.tzinfo is None:
+        return dt
+    # 先转至 UTC 时间，再移除时区
+    dt = dt.astimezone(timezone.utc)
+    return dt.replace(tzinfo=None)
 
 
 class ChatGPT_LLM(LLM):
@@ -202,10 +212,12 @@ class GPTCore:
             async with create_session() as session:
                 records = (await session.scalars(statement)).all()
             if records:
-                text = f"Reply: {repr(deserialize_message(records[0].message, V11Msg))}\n\n"
-        text += repr(v11msg)
+                text = (
+                    f"Reply: {str(deserialize_message(records[0].message, V11Msg))}\n\n"
+                )
+        text += str(v11msg)
         user_id = msg.get_user_id()
-        self.user_bot_last_time[user_id] = msg.time
+        self.user_bot_last_time[user_id] = datetime.fromtimestamp(msg.time)
         result = {}
 
         available_api = user_api_manager.get_active_apis(user_id)
@@ -284,11 +296,7 @@ class GPTCore:
             recipient_log.append(
                 {
                     "recipient": "",
-                    "message": MessageChain(
-                        message=[
-                            MessageSegment(MessageType.PLAIN, text=result["message"])
-                        ]
-                    ),
+                    "message": MessageSegment.text(result["message"]),
                 }
             )
             data = {}
@@ -302,14 +310,7 @@ class GPTCore:
                 recipient_log.append(
                     {
                         "recipient": result["recipient"],
-                        "message": MessageChain(
-                            message=[
-                                MessageSegment(
-                                    MessageType.PLAIN,
-                                    text=message["content"]["parts"][0],
-                                )
-                            ]
-                        )
+                        "message": MessageSegment.text(message["content"]["parts"][0])
                         if not "qq_message" in message
                         else message["qq_message"],
                     }
@@ -326,25 +327,16 @@ class GPTCore:
             await session.execute(st)
             await session.commit()
         recipient_log.append(
-            {
-                "recipient": "",
-                "message": MessageChain(
-                    message=[
-                        MessageSegment(
-                            MessageType.PLAIN, text=result["message"].strip()
-                        )
-                    ]
-                ),
-            }
+            {"recipient": "", "message": MessageSegment.text(result["message"].strip())}
         )
         return recipient_log
 
     async def create_chat_bot(
         self, user_id: str, model: str, nickname: str = ""
-    ) -> MessageChain:
+    ) -> str:
         self.user_bot_model[user_id] = model
         nickname = nickname or user_id
-        return MessageChain(f"{nickname}({user_id})的ChatGPT模型已经改为{model}")
+        return f"{nickname}({user_id})的ChatGPT模型已经改为{model}"
 
     async def reset_chat_bot(self, bot: Bot, user_id: str, nickname) -> str:
         result = ""
@@ -397,7 +389,7 @@ class GPTCore:
                 date = date - timedelta(days=3)
             if (datetime.utcnow() - date).days > 1:
                 nickname = (
-                    (await bot.user_profile(target=int(v)))["nickname"]
+                    (await bot.get_stranger_info(user_id=int(v)))["nickname"]
                     if v.isdigit() and int(v) > 10000
                     else "用户" + v
                 )

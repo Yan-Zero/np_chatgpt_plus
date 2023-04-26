@@ -253,61 +253,34 @@ async def handle_chatbot(bot: Bot, event: MessageEvent, args=CommandArg()):
                     "data": {
                         "name": i["recipient"] or nickname,
                         "uin": bot.self_id if not i["recipient"] else "10000",
-                        "content": repr(i["message"]),
+                        "content": str(i["message"]),
                     },
                 }
                 for i in result[:-1]
             ]
 
             try:
-                # await chatbot.send(
-                #     message=V11Msg(
-                #         MessageSegment(
-                #             type=MessageType.FORWARD,
-                #             nodeList=nodeList,
-                #             display={
-                #                 "title": "GPT的调用记录",
-                #                 "brief": "[调用记录]",
-                #                 "source": "调用记录",
-                #                 "preview": [
-                #                     f"{nodeList[0]['senderName']}: {result[0]['message'].extract_plain_text()}..."
-                #                 ],
-                #                 "summary": "点击查看调用记录",
-                #             },
-                #         )
-                #     ),
-                # )
-                chatbot.send(message=V11Msg())
+                if isinstance(event, GroupMessageEvent):
+                    await bot.send_group_forward_msg(
+                        gourp_id=event.group_id, messages=nodeList
+                    )
+                elif isinstance(event, PrivateMessageEvent):
+                    await bot.send_private_forward_msg(
+                        user_id=event.user_id, messages=nodeList
+                    )
+                else:
+                    raise ValueError("未知的消息类型")
             except Exception as ex:
-                nodeList = [
-                    {
-                        "senderId": 10000,
-                        "time": int(datetime.datetime.now().timestamp()),
-                        "senderName": "Error Info",
-                        "messageChain": MessageChain(str(ex)).export(),
-                    },
-                    {
-                        "senderId": 10000,
-                        "time": int(datetime.datetime.now().timestamp()),
-                        "senderName": "Node List",
-                        "messageChain": MessageChain(str(nodeList)).export(),
-                    },
-                ]
                 await chatbot.send(
-                    message=MessageChain(
-                        MessageSegment(
-                            type=MessageType.FORWARD,
-                            nodeList=nodeList,
-                            display={
-                                "title": "GPT的错误信息",
-                                "brief": "[错误信息]",
-                                "source": "错误信息",
-                                "preview": [f"{nodeList[0]['senderName']}: {ex}..."],
-                                "summary": "点击查看错误信息",
-                            },
-                        )
-                    ),
+                    message="发送合并消息失败，错误信息：{e}\n{eargs}".format(e=ex, eargs=ex.args)
                 )
+                t = "\n\n".join(
+                    [
+                        "{}:\n{}".format(i["data"]["name"], i["data"]["content"])
+                        for i in nodeList
+                    ]
+                )
+                await chatbot.send(t)
         await send(
             bot=bot,
             event=event,
@@ -340,7 +313,7 @@ async def handle_reset(bot: Bot, event: MessageEvent, args: V11Msg = CommandArg(
         if lists:
             for id in lists:
                 result = await GPTCORE.reset_chat_bot(
-                    bot, id, (await bot.get_stranger_info(user_id=int(id)))["user_name"]
+                    bot, id, (await bot.get_stranger_info(user_id=int(id)))["nickname"]
                 )
                 await reset.send(result)
             return
@@ -349,7 +322,7 @@ async def handle_reset(bot: Bot, event: MessageEvent, args: V11Msg = CommandArg(
         result = await GPTCORE.reset_chat_bot(
             bot,
             event.get_user_id(),
-            (await bot.get_user_info(user_id=event.get_user_id()))["user_name"],
+            (await bot.get_stranger_info(user_id=int(event.get_user_id())))["nickname"],
         )
         await send(bot=bot, event=event, message=result, reply_message=True)
     except Exception as e:
@@ -396,19 +369,9 @@ summarize_ = nonebot.plugin.on_command(
 async def handle_summarize(bot: Bot, event: MessageEvent):
     await summarize_.send("正在处理，请稍后...")
 
-    t = (
-        await plugin_data.config.get("last_clear_time")
-        or datetime.datetime.utcnow().timestamp()
-    )
-    if (datetime.datetime.utcnow() - datetime.datetime.utcfromtimestamp(t)).days > 0:
-        await plugin_data.config.set(
-            "last_clear_time", datetime.datetime.utcnow().timestamp()
-        )
-        await handle_clear_record(bot, event, "")
-
     if isinstance(event, GroupMessageEvent):
         records = await get_message_records(
-            group_ids=[event.group_id],
+            group_ids=[str(event.group_id)],
             time_start=datetime.datetime.utcnow() - datetime.timedelta(days=1),
         )
     elif isinstance(event, PrivateMessageEvent):

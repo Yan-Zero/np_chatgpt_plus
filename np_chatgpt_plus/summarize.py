@@ -110,7 +110,7 @@ class SummarizeLog:
         conversation_log = []
         t = ""
         for msg in msgs:
-            message = repr((deserialize_message(msg.message, V11Msg)))
+            message = str((deserialize_message(msg.message, V11Msg)))
             if (
                 msg.type == "s"
                 and "用词最不友善ID的是" in message
