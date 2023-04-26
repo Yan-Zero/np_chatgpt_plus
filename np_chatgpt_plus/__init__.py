@@ -91,7 +91,7 @@ unban = nonebot.on_command("unban", priority=10, block=True, permission=GPTOWNER
 async def handle_ban(args: V11Msg = CommandArg()):
     if not args:
         await rule_.finish("参数错误")
-    lists = [x.data["user_id"] for x in args if x.type == "mention"]
+    lists = [x.data["user_id"] for x in args if x.type == "at"]
     lists.extend([x for x in args.extract_plain_text().split(" ") if x.isdigit()])
     lists = set(lists)
     lists.update(await plugin_data.config.get("ban", set()))
@@ -103,7 +103,7 @@ async def handle_ban(args: V11Msg = CommandArg()):
 async def handle_unban(args: V11Msg = CommandArg()):
     if not args:
         await unban.finish("参数错误")
-    lists = [x.data["user_id"] for x in args if x.type == "mention"]
+    lists = [x.data["user_id"] for x in args if x.type == "at"]
     lists.extend([x for x in args.extract_plain_text().split(" ") if x.isdigit()])
     result: set = set(await plugin_data.config.get("ban", []))
     result.difference_update(lists)
@@ -151,7 +151,7 @@ api_key:
 
 @set_.handle()
 async def handle_set(bot: Bot, event: MessageEvent, args=CommandArg()):
-    lists = [x.data["user_id"] for x in args if x.type == "mention"]
+    lists = [x.data["user_id"] for x in args if x.type == "at"]
     args = args.extract_plain_text()
     args = args.split(" ")
     if len(args) < 2:
@@ -245,7 +245,7 @@ async def handle_chatbot(bot: Bot, event: MessageEvent, args=CommandArg()):
     try:
         result = await GPTCORE.chat_bot(bot, event, args)
         if len(result) > 1:
-            nickname = bot.config.nickname
+            nickname = (await bot.get_login_info())['nickname']
             # 构造成转发消息的形式
             nodeList = [
                 {
@@ -274,18 +274,17 @@ async def handle_chatbot(bot: Bot, event: MessageEvent, args=CommandArg()):
                 await chatbot.send(
                     message="发送合并消息失败，错误信息：{e}\n{eargs}".format(e=ex, eargs=ex.args)
                 )
-                t = "\n\n".join(
-                    [
-                        "{}:\n{}".format(i["data"]["name"], i["data"]["content"])
-                        for i in nodeList
-                    ]
-                )
-                await chatbot.send(t)
+                # t = "\n\n".join(
+                #     [
+                #         "{}:\n{}".format(i["data"]["name"], i["data"]["content"])
+                #         for i in nodeList
+                #     ]
+                # )
+                # await chatbot.send(t)
         await send(
             bot=bot,
             event=event,
             message=result[-1]["message"],
-            at_sender=False,
             reply_message=True,
         )
     except TimeoutError:
@@ -308,7 +307,7 @@ async def handle_reset(bot: Bot, event: MessageEvent, args: V11Msg = CommandArg(
     if await SUPERUSER(bot=bot, event=event):
         if args.extract_plain_text() == "all":
             await reset.finish(await GPTCORE.reset_chat_bot(bot, "all", "all"))
-        lists = [x.data["user_id"] for x in args if x.type == "mention"]
+        lists = [x.data["user_id"] for x in args if x.type == "at"]
         lists.extend([x for x in args.extract_plain_text().split(" ") if x.isdigit()])
         if lists:
             for id in lists:
