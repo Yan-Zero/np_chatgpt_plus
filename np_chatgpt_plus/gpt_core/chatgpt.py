@@ -204,8 +204,10 @@ class GPTCore:
             async with create_session() as session:
                 records = (await session.scalars(statement)).all()
             if records:
-                text = f"Reply: {repr(deserialize_message(records[0].message, V12Msg))}\n\n"
-        text += repr(v12msg)
+                text = (
+                    f"Reply: {str(deserialize_message(records[0].message, V12Msg))}\n\n"
+                )
+        text += str(v12msg)
         user_id = msg.get_user_id()
         self.user_bot_last_time[user_id] = msg.time
         result = {}
@@ -379,7 +381,7 @@ class GPTCore:
                 date = date - timedelta(days=3)
             if (datetime.utcnow() - date).days > 1:
                 nickname = (
-                    (await bot.user_profile(target=int(v)))["nickname"]
+                    (await bot.get_user_info(user_id=user_id))["user_displayname"]
                     if v.isdigit() and int(v) > 10000
                     else "用户" + v
                 )

@@ -292,12 +292,13 @@ async def handle_reset(bot: Bot, event: MessageEvent, args: V12Msg = CommandArg(
     if await SUPERUSER(bot=bot, event=event):
         if args.extract_plain_text() == "all":
             await reset.finish(await GPTCORE.reset_chat_bot(bot, "all", "all"))
+        
         lists = [x.data["user_id"] for x in args if x.type == "mention"]
         lists.extend([x for x in args.extract_plain_text().split(" ") if x.isdigit()])
         if lists:
             for id in lists:
                 result = await GPTCORE.reset_chat_bot(
-                    bot, id, (await bot.get_user_info(user_id=id))["user_name"]
+                    bot, id, id
                 )
                 await reset.send(result)
             return
