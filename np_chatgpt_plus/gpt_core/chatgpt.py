@@ -4,13 +4,13 @@ import random
 import httpx
 import revChatGPT.typings as rct
 from datetime import datetime, timedelta
-from nonebot.adapters.onebot.v12 import Bot
-from nonebot.adapters.onebot.v12.event import MessageEvent
-from nonebot.adapters.onebot.v12.message import Message, MessageSegment
+from nonebot.adapters.onebot.v11 import Bot
+from nonebot.adapters.onebot.v11.event import MessageEvent
+from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from sqlalchemy import select, update
 from nonebot_plugin_datastore import create_session
 from nonebot_plugin_chatrecorder import MessageRecord
-from nonebot_plugin_chatrecorder.message import deserialize_message, V12Msg
+from nonebot_plugin_chatrecorder.message import deserialize_message, V11Msg
 from langchain.llms.base import LLM
 from .api_handle import user_api_manager
 from .chatbot_with_lock import (
@@ -193,7 +193,7 @@ class GPTCore:
 
         await self.ResetConversation("20")
 
-    async def chat_bot(self, bot: Bot, msg: MessageEvent, v12msg) -> list[dict]:
+    async def chat_bot(self, bot: Bot, msg: MessageEvent, v11msg) -> list[dict]:
         text = ""
         if msg.reply:
             statement = select(MessageRecord).where(
@@ -202,8 +202,8 @@ class GPTCore:
             async with create_session() as session:
                 records = (await session.scalars(statement)).all()
             if records:
-                text = f"Reply: {repr(deserialize_message(records[0].message, V12Msg))}\n\n"
-        text += repr(v12msg)
+                text = f"Reply: {repr(deserialize_message(records[0].message, V11Msg))}\n\n"
+        text += repr(v11msg)
         user_id = msg.get_user_id()
         self.user_bot_last_time[user_id] = msg.time
         result = {}
@@ -355,7 +355,7 @@ class GPTCore:
                         await self.reset_chat_bot(
                             bot,
                             id,
-                            (await bot.get_user_info(user_id=id))["user_name"],
+                            (await bot.get_stranger_info(user_id=int(id)))["user_name"],
                         )
                         + "\n"
                     )

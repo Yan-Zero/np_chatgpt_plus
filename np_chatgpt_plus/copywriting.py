@@ -3,13 +3,13 @@ import os
 import nonebot
 import nonebot.plugin
 import nonebot.rule
-from nonebot.adapters.onebot.v12 import Bot, Message
-from nonebot.adapters.onebot.v12.bot import send
-from nonebot.adapters.onebot.v12.event import MessageEvent
+from nonebot.adapters.onebot.v11 import Bot, Message
+from nonebot.adapters.onebot.v11.bot import send
+from nonebot.adapters.onebot.v11.event import MessageEvent
 from typing import Optional, Tuple
 from .gpt_core.chatbot_with_lock import get_token_count
 from .rule import GPTOWNER
-from . import GPTCORE, V12Msg, SUPERUSER, CommandArg, Command
+from . import GPTCORE, V11Msg, SUPERUSER, CommandArg, Command
 from .config import Config
 
 plugin_config = Config.parse_obj(nonebot.get_driver().config)
@@ -23,7 +23,6 @@ cw_dirs = [
     for dir_name in os.listdir(plugin_config.cw_path)
     if os.path.isdir(os.path.join(plugin_config.cw_path, dir_name))
 ]
-cw_tokens = {}
 cache = {}
 cw = nonebot.plugin.on_command("cw", priority=4, block=True)
 cw_p = nonebot.plugin.on_command(("cw", "p"), priority=3, block=True)
@@ -38,7 +37,7 @@ manage = nonebot.plugin.on_command(
 
 
 @cw.handle()
-async def cw_handle(bot: Bot, event: MessageEvent, args: V12Msg = CommandArg()):
+async def cw_handle(bot: Bot, event: MessageEvent, args: V11Msg = CommandArg()):
     """
     文案生成器，政治安全模式
     """
@@ -46,7 +45,7 @@ async def cw_handle(bot: Bot, event: MessageEvent, args: V12Msg = CommandArg()):
 
 
 @cw_p.handle()
-async def cw_p_handle(bot: Bot, event: MessageEvent, args: V12Msg = CommandArg()):
+async def cw_p_handle(bot: Bot, event: MessageEvent, args: V11Msg = CommandArg()):
     """
     文案生成器，非政治安全模式
     """
@@ -131,9 +130,7 @@ def get_cw(keyword: str, topic: str, info: Optional[str] = None):
             encoding="utf-8",
         ) as f:
             s = f.read().strip()
-            cw_tokens[keyword] = cw_tokens.get(keyword, 0) + get_token_count(s)
             prompt += ["````example\n" + s + "\n````\n"]
-    cw_tokens[keyword] = cw_tokens.get(keyword, 0) // (len(prompt) - 1)
     if T:
         if get_token_count("".join(prompt)) > 3000:
             prompt[-1] = T
@@ -205,10 +202,7 @@ async def cw_gene(
                 reply_message=True,
             )
         result = result.strip("<Over>").strip()
-        if (
-            result
-            and cw_tokens[t[0]] / 1.7 < get_token_count(result) < cw_tokens[t[0]] * 1.7
-        ):
+        if result:
             await send(
                 bot=bot,
                 event=event,

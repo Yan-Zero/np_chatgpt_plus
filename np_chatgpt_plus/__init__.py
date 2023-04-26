@@ -9,25 +9,24 @@ nonebot.require("nonebot_plugin_datastore")
 nonebot.require("nonebot_plugin_chatrecorder")
 from revChatGPT.typings import Error as CBTError
 import nonebot.plugin, nonebot.rule
-from nonebot.adapters.onebot.v12 import Bot
-from nonebot.adapters.onebot.v12.event import (
+from nonebot.adapters.onebot.v11 import Bot
+from nonebot.adapters.onebot.v11.event import (
     MessageEvent,
     GroupMessageEvent,
     PrivateMessageEvent,
 )
-from nonebot.adapters.onebot.v12.permission import GROUP, PRIVATE
+from nonebot.adapters.onebot.v11.permission import GROUP, PRIVATE
 from nonebot.adapters import Bot as BaseBot
-from nonebot.adapters.onebot.v12.message import Message as V12Msg
-from nonebot.adapters.onebot.v12.message import MessageSegment
+from nonebot.adapters.onebot.v11.message import Message as V11Msg
+from nonebot.adapters.onebot.v11.message import MessageSegment
 from nonebot.params import CommandArg, Command
 from nonebot_plugin_datastore import get_plugin_data, create_session
 from nonebot.message import event_postprocessor
 from typing import Optional, Dict, Any
 from nonebot_plugin_datastore.db import post_db_init
 from nonebot_plugin_chatrecorder import get_message_records
-from nonebot.adapters.onebot.v12.bot import send
+from nonebot.adapters.onebot.v11.bot import send
 from .rule import BAN, COUNT_LIMIT, GPTOWNER, SUPERUSER
-from .model import ConversationId
 from .gpt_core import GPTCore
 from .gpt_core.api_handle import user_api_manager
 from .config import Config
@@ -89,7 +88,7 @@ unban = nonebot.on_command("unban", priority=10, block=True, permission=GPTOWNER
 
 
 @rule_.handle()
-async def handle_ban(args: V12Msg = CommandArg()):
+async def handle_ban(args: V11Msg = CommandArg()):
     if not args:
         await rule_.finish("参数错误")
     lists = [x.data["user_id"] for x in args if x.type == "mention"]
@@ -101,7 +100,7 @@ async def handle_ban(args: V12Msg = CommandArg()):
 
 
 @unban.handle()
-async def handle_unban(args: V12Msg = CommandArg()):
+async def handle_unban(args: V11Msg = CommandArg()):
     if not args:
         await unban.finish("参数错误")
     lists = [x.data["user_id"] for x in args if x.type == "mention"]
@@ -117,7 +116,7 @@ async def handle_api_docs(bot: Bot, event: MessageEvent, args=CommandArg()):
     # /api_docs [api_key]
     args = args.extract_plain_text().strip()
     if not args:
-        await handle_api_docs(bot, event, V12Msg("1"))
+        await handle_api_docs(bot, event, V11Msg("1"))
         return
     elif args.isdigit():
         page = int(args)
@@ -190,7 +189,7 @@ async def handle_was_mention(bot: Bot, event: MessageEvent):
 
 
 @gpt4.handle()
-async def handle_gpt4(bot: Bot, event: MessageEvent, args: V12Msg = CommandArg()):
+async def handle_gpt4(bot: Bot, event: MessageEvent, args: V11Msg = CommandArg()):
     if id := args.get("mention", 1):
         id = id[0].data["user_id"]
     else:
@@ -198,7 +197,9 @@ async def handle_gpt4(bot: Bot, event: MessageEvent, args: V12Msg = CommandArg()
     id = id or event.get_user_id()
     if id:
         result = await GPTCORE.create_chat_bot(
-            id, "gpt-4", nickname=(await bot.get_user_info(user_id=id))["user_name"]
+            id,
+            "gpt-4",
+            nickname=(await bot.get_stranger_info(user_id=int(id)))["user_name"],
         )
         await gpt4.finish(result)
 
@@ -260,7 +261,7 @@ async def handle_chatbot(bot: Bot, event: MessageEvent, args=CommandArg()):
 
             try:
                 # await chatbot.send(
-                #     message=V12Msg(
+                #     message=V11Msg(
                 #         MessageSegment(
                 #             type=MessageType.FORWARD,
                 #             nodeList=nodeList,
@@ -276,7 +277,7 @@ async def handle_chatbot(bot: Bot, event: MessageEvent, args=CommandArg()):
                 #         )
                 #     ),
                 # )
-                chatbot.send(message=V12Msg())
+                chatbot.send(message=V11Msg())
             except Exception as ex:
                 nodeList = [
                     {
@@ -330,7 +331,7 @@ async def handle_chatbot(bot: Bot, event: MessageEvent, args=CommandArg()):
 
 
 @reset.handle()
-async def handle_reset(bot: Bot, event: MessageEvent, args: V12Msg = CommandArg()):
+async def handle_reset(bot: Bot, event: MessageEvent, args: V11Msg = CommandArg()):
     if await SUPERUSER(bot=bot, event=event):
         if args.extract_plain_text() == "all":
             await reset.finish(await GPTCORE.reset_chat_bot(bot, "all", "all"))
@@ -339,7 +340,7 @@ async def handle_reset(bot: Bot, event: MessageEvent, args: V12Msg = CommandArg(
         if lists:
             for id in lists:
                 result = await GPTCORE.reset_chat_bot(
-                    bot, id, (await bot.get_user_info(user_id=id))["user_name"]
+                    bot, id, (await bot.get_stranger_info(user_id=int(id)))["user_name"]
                 )
                 await reset.send(result)
             return
@@ -435,3 +436,6 @@ async def handle_summarize(bot: Bot, event: MessageEvent):
         else:
             await summarize_.send("未知错误，请稍后再试：\n{e}\n{eargs}".format(e=e, eargs=e.args))
             raise e
+
+
+from .copywriting import cw
