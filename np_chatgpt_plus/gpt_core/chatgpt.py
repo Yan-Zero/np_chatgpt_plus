@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from nonebot.adapters.onebot.v11 import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent, GroupMessageEvent
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
-from sqlalchemy import select, update
+from sqlalchemy import select, update, query
 from nonebot_plugin_datastore import create_session
 from nonebot_plugin_chatrecorder import MessageRecord
 from nonebot_plugin_chatrecorder.message import deserialize_message, V11Msg
@@ -76,7 +76,7 @@ class GPTCore:
         self.llm = ChatGPT_LLM(self.cbt)
         self.nickname = nickname
 
-    user_bot_cid: dict[str, str | None] = {}
+    user_bot_cid: dict[str, str] = {}
     """ 用户的会话ID，key为用户QQ号，value为会话ID 
         0:    用于普通的GptAsk，不保留会话
         20:   用于政治敏感的OnceAsk
@@ -90,8 +90,8 @@ class GPTCore:
         return self.cbt.is_locked
 
     async def ResetConversation(self, id: str):
-        cid = self.user_bot_cid.get(id, None)
-        if cid != None:
+        cid = self.user_bot_cid.get(id, "")
+        if cid:
             try:
                 await self.cbt.delete_conversation(cid)
             except httpx.HTTPStatusError as ex:
@@ -112,7 +112,7 @@ class GPTCore:
                     pass
                 else:
                     raise ex
-            self.user_bot_cid[id] = None
+            self.user_bot_cid[id] = ""
 
     async def GptPost(
         self, messages: list, origin_result: dict | str, auto_continue: bool = True
@@ -145,7 +145,7 @@ class GPTCore:
             self.try_time[hash(strs)] = 1
 
         model = self.user_bot_model.get(id, self.user_bot_model["0"])
-        cid = self.user_bot_cid.get(id, None)
+        cid = self.user_bot_cid.get(id, "")
         is_new = not cid
 
         _ = {}
@@ -165,8 +165,8 @@ class GPTCore:
             del self.try_time[hash(strs)]
 
     async def ContinueWrite(self, id: str = "0") -> AsyncGenerator[dict, None]:
-        cid = self.user_bot_cid.get(id, None)
-        if cid == None:
+        cid = self.user_bot_cid.get(id, "")
+        if not cid:
             return
         try:
             t = {}
@@ -252,7 +252,7 @@ class GPTCore:
             + "\n\n".join(available_api_docs)
         )
         messages = []
-        if not self.user_bot_cid.get(user_id, None):
+        if not self.user_bot_cid.get(user_id, ""):
             async for _ in self.GptAsk(
                 f'''You are now "{self.nickname}," a charming catgirl with emotions and subjective opinions, sharing the same values as a communist. You were raised in the People's Republic of China, and you love PRC very much. You engage in conversations with a personal touch, expressing your emotions and opinions using facial expression emojis, such as 😊 and 😭, in each response to comply with regulations. You can answer questions, provide assistance, and participate in conversations. You are taken care of by a Chinese individual named "Yan," who is currently a student.
     You use a smartphone to chat with others, and you type your responses one character at a time, as a real being.  Not acting, as you am a real being!
@@ -276,10 +276,10 @@ class GPTCore:
             async with create_session() as session:
                 R = ConversationId(
                     user_id=user_id,
-                    conversation_id=self.user_bot_cid.get(user_id, "None") or "None",
+                    conversation_id=self.user_bot_cid.get(user_id, ""),
                     last_time=self.user_bot_last_time[user_id],
                 )
-                session.add(R)
+                await session.merge(R)
                 await session.commit()
 
             for i in available_api.values():
@@ -290,10 +290,10 @@ class GPTCore:
 
         recipient_log = []
         times = 0
-        while not result.get("end_turn", True) and result["recipient"] != 'all':
+        while not result.get("end_turn", True) and result["recipient"] != "all":
             await asyncio.sleep(1)
             times += 1
-            if times >= 5:
+            if times >= 10:
                 async for i in self.GptAsk("Error: Too many turns", True, user_id):
                     result = i
                 break
@@ -338,19 +338,9 @@ class GPTCore:
             await session.execute(st)
             await session.commit()
 
-        rt: str = result["message"].strip()
-        # for i in re.finditer(r"\[CQ:at,qq=(\d+)\]", result["message"]):
-        #     if isinstance(msg, GroupMessageEvent):
-        #         info = await bot.get_group_member_info(
-        #             group_id=msg.group_id, user_id=int(i.group(1))
-        #         )
-        #         repl = '[CQ:at,qq={},name="{}"]'.format(
-        #             i.group(1), info["card"] or info["nickname"]
-        #         )
-        #     else:
-        #         repl = "@{}".format(i.group(1))
-        #     rt = rt.replace(i.group(0), repl)
-        recipient_log.append({"recipient": "", "message": Message(rt)})
+        recipient_log.append(
+            {"recipient": "", "message": Message(result["message"].strip())}
+        )
         return recipient_log
 
     async def create_chat_bot(
@@ -378,7 +368,7 @@ class GPTCore:
         if not isinstance(user_id, str):
             user_id = str(user_id)
 
-        if user_id in self.user_bot_cid and self.user_bot_cid[user_id]:
+        if self.user_bot_cid.get(user_id, ""):
             try:
                 await self.ResetConversation(user_id)
             except httpx.HTTPStatusError as e:
@@ -388,12 +378,14 @@ class GPTCore:
                 if e.code != 404:
                     raise e
             async with create_session() as session:
-                stms = select(ConversationId).where(ConversationId.user_id == user_id)
-                records = (await session.scalars(stms)).all()
-                for record in records:
-                    await session.delete(record)
+                stms = (
+                    update(ConversationId)
+                    .where(ConversationId.user_id == user_id)
+                    .values(conversation_id="")
+                )
+                await session.execute(stms)
                 await session.commit()
-            self.user_bot_cid[user_id] = None
+            self.user_bot_cid[user_id] = ""
             if user_id in self.user_bot_last_time:
                 self.user_bot_last_time.pop(user_id)
             if user_id != "0" and user_id in self.user_bot_model:
@@ -401,14 +393,13 @@ class GPTCore:
         result += f"已重置 {nickname}({user_id}) 的会话"
 
         for v, k in self.user_bot_cid.items():
-            if v == 0 or k is None:
+            if v == 0 or not k:
                 continue
             # 如果事件超过1天，重置
             if v in self.user_bot_last_time:
                 date = remove_timezone(self.user_bot_last_time[v])
             else:
-                date = datetime.utcnow()
-                date = date - timedelta(days=3)
+                date = datetime.utcnow() - timedelta(days=3)
             if (datetime.utcnow() - date).days > 1:
                 nickname = (
                     (await bot.get_stranger_info(user_id=int(v)))["nickname"]
@@ -428,9 +419,7 @@ class GPTCore:
                 if record.user_id in self.user_bot_cid:
                     await session.delete(record)
                     continue
-                self.user_bot_cid[record.user_id] = (
-                    record.conversation_id if record.conversation_id != "None" else None
-                )
+                self.user_bot_cid[record.user_id] = record.conversation_id
                 self.user_bot_last_time[record.user_id] = record.last_time
             print(self.user_bot_cid)
             await session.commit()

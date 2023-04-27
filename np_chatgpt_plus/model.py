@@ -12,7 +12,7 @@ class ConversationId(Model):
     __table_args__ = {"extend_existing": True}
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[str] = mapped_column(String(256))
+    user_id: Mapped[str] = mapped_column(String(256), unique=True)
     """ 用户id """
     conversation_id: Mapped[str] = mapped_column(String(256))
     """ 会话id """
