@@ -1,11 +1,12 @@
 from typing import Optional, List, AsyncGenerator
+import re
 import asyncio
 import random
 import httpx
 import revChatGPT.typings as rct
 from datetime import datetime, timedelta, timezone
 from nonebot.adapters.onebot.v11 import Bot
-from nonebot.adapters.onebot.v11.event import MessageEvent
+from nonebot.adapters.onebot.v11.event import MessageEvent, GroupMessageEvent
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
 from sqlalchemy import select, update
 from nonebot_plugin_datastore import create_session
@@ -213,9 +214,18 @@ class GPTCore:
             async with create_session() as session:
                 records = (await session.scalars(statement)).all()
             if records:
-                text = (
-                    f"Reply: {str(deserialize_message(records[0].message, V11Msg))}\n\n"
+                text = "```quotation\n[{}](qq={})".format(
+                    (await bot.get_stranger_info(user_id=int(records[0].user_id)))[
+                        "nickname"
+                    ],
+                    records[0].user_id,
                 )
+                for line in str(
+                    deserialize_message(records[0].message, V11Msg)
+                ).splitlines():
+                    text += "\n> " + line
+                text += "\n```\n\n"
+
         text += str(v11msg)
         user_id = msg.get_user_id()
         self.user_bot_last_time[user_id] = datetime.fromtimestamp(msg.time)
@@ -280,7 +290,7 @@ class GPTCore:
 
         recipient_log = []
         times = 0
-        while not result.get("end_turn", True):
+        while not result.get("end_turn", True) and result["recipient"] != 'all':
             await asyncio.sleep(1)
             times += 1
             if times >= 5:
@@ -327,9 +337,20 @@ class GPTCore:
             )
             await session.execute(st)
             await session.commit()
-        recipient_log.append(
-            {"recipient": "", "message": Message(result["message"].strip())}
-        )
+
+        rt: str = result["message"].strip()
+        # for i in re.finditer(r"\[CQ:at,qq=(\d+)\]", result["message"]):
+        #     if isinstance(msg, GroupMessageEvent):
+        #         info = await bot.get_group_member_info(
+        #             group_id=msg.group_id, user_id=int(i.group(1))
+        #         )
+        #         repl = '[CQ:at,qq={},name="{}"]'.format(
+        #             i.group(1), info["card"] or info["nickname"]
+        #         )
+        #     else:
+        #         repl = "@{}".format(i.group(1))
+        #     rt = rt.replace(i.group(0), repl)
+        recipient_log.append({"recipient": "", "message": Message(rt)})
         return recipient_log
 
     async def create_chat_bot(
