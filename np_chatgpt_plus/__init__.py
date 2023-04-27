@@ -91,7 +91,7 @@ unban = nonebot.on_command("unban", priority=10, block=True, permission=GPTOWNER
 async def handle_ban(args: V11Msg = CommandArg()):
     if not args:
         await rule_.finish("参数错误")
-    lists = [x.data["user_id"] for x in args if x.type == "at"]
+    lists = [x.data["qq"] for x in args if x.type == "at"]
     lists.extend([x for x in args.extract_plain_text().split(" ") if x.isdigit()])
     lists = set(lists)
     lists.update(await plugin_data.config.get("ban", set()))
@@ -103,7 +103,7 @@ async def handle_ban(args: V11Msg = CommandArg()):
 async def handle_unban(args: V11Msg = CommandArg()):
     if not args:
         await unban.finish("参数错误")
-    lists = [x.data["user_id"] for x in args if x.type == "at"]
+    lists = [x.data["qq"] for x in args if x.type == "at"]
     lists.extend([x for x in args.extract_plain_text().split(" ") if x.isdigit()])
     result: set = set(await plugin_data.config.get("ban", []))
     result.difference_update(lists)
@@ -151,7 +151,7 @@ api_key:
 
 @set_.handle()
 async def handle_set(bot: Bot, event: MessageEvent, args=CommandArg()):
-    lists = [x.data["user_id"] for x in args if x.type == "at"]
+    lists = [x.data["qq"] for x in args if x.type == "at"]
     args = args.extract_plain_text()
     args = args.split(" ")
     if len(args) < 2:
@@ -190,8 +190,8 @@ async def handle_was_mention(bot: Bot, event: MessageEvent):
 
 @gpt4.handle()
 async def handle_gpt4(bot: Bot, event: MessageEvent, args: V11Msg = CommandArg()):
-    if id := args.get("mention", 1):
-        id = id[0].data["user_id"]
+    if id := args.get("at", 1):
+        id = id[0].data["qq"]
     else:
         id = args.extract_plain_text().strip() or event.get_user_id()
     id = id or event.get_user_id()
@@ -199,7 +199,7 @@ async def handle_gpt4(bot: Bot, event: MessageEvent, args: V11Msg = CommandArg()
         result = await GPTCORE.create_chat_bot(
             id,
             "gpt-4",
-            nickname=(await bot.get_stranger_info(user_id=int(id)))["user_name"],
+            nickname=(await bot.get_stranger_info(user_id=int(id)))["nickname"],
         )
         await gpt4.finish(result)
 
@@ -245,7 +245,7 @@ async def handle_chatbot(bot: Bot, event: MessageEvent, args=CommandArg()):
     try:
         result = await GPTCORE.chat_bot(bot, event, args)
         if len(result) > 1:
-            nickname = (await bot.get_login_info())['nickname']
+            nickname = (await bot.get_login_info())["nickname"]
             # 构造成转发消息的形式
             nodeList = [
                 {
@@ -274,13 +274,6 @@ async def handle_chatbot(bot: Bot, event: MessageEvent, args=CommandArg()):
                 await chatbot.send(
                     message="发送合并消息失败，错误信息：{e}\n{eargs}".format(e=ex, eargs=ex.args)
                 )
-                # t = "\n\n".join(
-                #     [
-                #         "{}:\n{}".format(i["data"]["name"], i["data"]["content"])
-                #         for i in nodeList
-                #     ]
-                # )
-                # await chatbot.send(t)
         await send(
             bot=bot,
             event=event,

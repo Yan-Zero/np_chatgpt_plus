@@ -145,17 +145,18 @@ class GPTCore:
 
         model = self.user_bot_model.get(id, self.user_bot_model["0"])
         cid = self.user_bot_cid.get(id, None)
-        is_new = cid == None
+        is_new = not cid
 
-        t = {}
+        _ = {}
         async for reply in self.cbt.ask(strs, cid, model=model, auto_continue=complete):
-            t = reply
-            yield t
-        cid = t.get("conversation_id", cid)
-        self.user_bot_cid[id] = cid
+            _ = reply
+            yield _
+        self.user_bot_cid[id] = _.get("conversation_id", cid)
         if persistent:
-            if is_new and cid != None and id.isdigit() and int(id) > 10000:
-                await self.cbt.change_title(cid, f"QQ: The Conversation of {id}")
+            if is_new and self.user_bot_cid[id] and id.isdigit() and int(id) > 10000:
+                await self.cbt.change_title(
+                    self.user_bot_cid[id], f"QQ: The Conversation of {id}"
+                )
         elif random.random() < 0.2 or must_delete:
             await self.ResetConversation(id)  # 20%的概率删除会话，减少连接次数
 
@@ -327,7 +328,7 @@ class GPTCore:
             await session.execute(st)
             await session.commit()
         recipient_log.append(
-            {"recipient": "", "message": MessageSegment.text(result["message"].strip())}
+            {"recipient": "", "message": Message(result["message"].strip())}
         )
         return recipient_log
 
@@ -347,7 +348,7 @@ class GPTCore:
                         await self.reset_chat_bot(
                             bot,
                             id,
-                            (await bot.get_stranger_info(user_id=int(id)))["user_name"],
+                            (await bot.get_stranger_info(user_id=int(id)))["nickname"],
                         )
                         + "\n"
                     )
