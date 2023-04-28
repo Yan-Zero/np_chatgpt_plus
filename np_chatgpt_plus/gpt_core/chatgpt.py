@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from nonebot.adapters.onebot.v11 import Bot
 from nonebot.adapters.onebot.v11.event import MessageEvent, GroupMessageEvent
 from nonebot.adapters.onebot.v11.message import Message, MessageSegment
-from sqlalchemy import select, update, query
+from sqlalchemy import select, update
 from nonebot_plugin_datastore import create_session
 from nonebot_plugin_chatrecorder import MessageRecord
 from nonebot_plugin_chatrecorder.message import deserialize_message, V11Msg
@@ -118,7 +118,7 @@ class GPTCore:
         self, messages: list, origin_result: dict | str, auto_continue: bool = True
     ):
         if isinstance(origin_result, str):
-            cid = origin_result
+            cid = origin_result if origin_result else None
             pid = None
         else:
             cid = origin_result.get("conversation_id", None)
@@ -149,7 +149,9 @@ class GPTCore:
         is_new = not cid
 
         _ = {}
-        async for reply in self.cbt.ask(strs, cid, model=model, auto_continue=complete):
+        async for reply in self.cbt.ask(
+            strs, cid if cid else None, model=model, auto_continue=complete
+        ):
             _ = reply
             yield _
         self.user_bot_cid[id] = _.get("conversation_id", cid)
@@ -168,6 +170,7 @@ class GPTCore:
         cid = self.user_bot_cid.get(id, "")
         if not cid:
             return
+
         try:
             t = {}
             async for reply in self.cbt.continue_write(cid):
@@ -279,13 +282,23 @@ class GPTCore:
                     conversation_id=self.user_bot_cid.get(user_id, ""),
                     last_time=self.user_bot_last_time[user_id],
                 )
-                await session.merge(R)
+                existing_obj = (
+                    await session.execute(
+                        select(ConversationId).filter_by(user_id=user_id)
+                    )
+                ).scalar()
+                if existing_obj:
+                    existing_obj.conversation_id = R.conversation_id
+                    existing_obj.last_time = R.last_time
+                    await session.merge(existing_obj)
+                else:
+                    session.add(R)
                 await session.commit()
 
             for i in available_api.values():
                 messages.extend(i.EXAMPLE_MESSAGES)
         messages.append(construct_message(text))
-        async for i in self.GptPost(messages, self.user_bot_cid.get(user_id) or ""):
+        async for i in self.GptPost(messages, self.user_bot_cid.get(user_id, "")):
             result = i
 
         recipient_log = []
@@ -409,19 +422,12 @@ class GPTCore:
                 result += "\n" + await self.reset_chat_bot(bot, v, nickname)
         return result
 
-    # @post_db_init
     async def load_user_cid(self):
         async with create_session() as session:
-            statement = select(ConversationId)
-            records = (await session.scalars(statement)).all()
-            # 每个人只保留一条记录
+            records = (await session.scalars(select(ConversationId))).all()
             for record in records:
-                if record.user_id in self.user_bot_cid:
-                    await session.delete(record)
-                    continue
                 self.user_bot_cid[record.user_id] = record.conversation_id
                 self.user_bot_last_time[record.user_id] = record.last_time
-            print(self.user_bot_cid)
             await session.commit()
 
     async def __aenter__(self):
