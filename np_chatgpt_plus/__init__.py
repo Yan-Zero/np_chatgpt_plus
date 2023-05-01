@@ -162,13 +162,7 @@ async def handle_set(bot: Bot, event: MessageEvent, args=CommandArg()):
     if args[0] == "cid":
         if len(args) <= 2:
             await set_.finish("参数错误")
-        cid = None
-        if len(args) > 2:
-            cid = args[2]
-        if args[1] == "llm":
-            GPTCORE.llm.cid = cid
-        else:
-            GPTCORE.user_bot_cid[args[1]] = cid
+        await GPTCORE.UpdateUserCid(args[1], args[2] if len(args) > 2 else None)
         await set_.finish("设置成功")
     if args[0] == "limit":
         if len(args) < 2:

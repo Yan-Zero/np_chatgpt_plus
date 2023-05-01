@@ -121,7 +121,7 @@ def get_cw(keyword: str, topic: str, info: Optional[str] = None):
             ) as f:
                 T = "````template\n" + f.read().strip() + "\n````\n"
             continue
-        if i > 10 or get_token_count("".join(prompt)) > 4000:
+        if i > 20 or get_token_count("".join(prompt)) > 4000:
             print(get_token_count("".join(prompt)))
             break
         with open(

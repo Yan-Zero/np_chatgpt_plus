@@ -211,23 +211,24 @@ class GPTCore:
     async def chat_bot(self, bot: Bot, msg: MessageEvent, v11msg) -> list[dict]:
         text = ""
         if msg.reply:
-            statement = select(MessageRecord).where(
-                MessageRecord.message_id == msg.reply.message_id
-            )
             async with create_session() as session:
-                records = (await session.scalars(statement)).all()
-            if records:
-                text = "```quotation\n[{}](qq={})".format(
-                    (await bot.get_stranger_info(user_id=int(records[0].user_id)))[
-                        "nickname"
-                    ],
-                    records[0].user_id,
+                record = await session.scalar(
+                    select(MessageRecord).where(
+                        MessageRecord.message_id == str(msg.reply.message_id)
+                    )
                 )
-                for line in str(
-                    deserialize_message(records[0].message, V11Msg)
-                ).splitlines():
-                    text += "\n> " + line
-                text += "\n```\n\n"
+                if record:
+                    text = "```quotation\n[{}](qq={})".format(
+                        (await bot.get_stranger_info(user_id=int(record.user_id)))[
+                            "nickname"
+                        ],
+                        record.user_id,
+                    )
+                    for line in str(
+                        deserialize_message(record.message, V11Msg)
+                    ).splitlines():
+                        text += "\n> " + line
+                    text += "\n```\n\n"
 
         text += str(v11msg)
         user_id = msg.get_user_id()
@@ -343,12 +344,11 @@ class GPTCore:
                     result = i
 
         async with create_session() as session:
-            st = (
+            await session.execute(
                 update(ConversationId)
                 .where(ConversationId.user_id == user_id)
                 .values(last_time=self.user_bot_last_time[user_id])
             )
-            await session.execute(st)
             await session.commit()
 
         recipient_log.append(
@@ -378,35 +378,15 @@ class GPTCore:
                     )
             await self.llm.reset()
             return result + "已重置 LLM"
+
         if not isinstance(user_id, str):
             user_id = str(user_id)
 
-        if self.user_bot_cid.get(user_id, ""):
-            try:
-                await self.ResetConversation(user_id)
-            except httpx.HTTPStatusError as e:
-                if e.response.status_code != 404:
-                    raise e
-            except rct.Error as e:
-                if e.code != 404:
-                    raise e
-            async with create_session() as session:
-                stms = (
-                    update(ConversationId)
-                    .where(ConversationId.user_id == user_id)
-                    .values(conversation_id="")
-                )
-                await session.execute(stms)
-                await session.commit()
-            self.user_bot_cid[user_id] = ""
-            if user_id in self.user_bot_last_time:
-                self.user_bot_last_time.pop(user_id)
-            if user_id != "0" and user_id in self.user_bot_model:
-                self.user_bot_model.pop(user_id)
+        await self.UpdateUserCid(user_id)
         result += f"已重置 {nickname}({user_id}) 的会话"
 
         for v, k in self.user_bot_cid.items():
-            if v == 0 or not k:
+            if v == "0" or not k:
                 continue
             # 如果事件超过1天，重置
             if v in self.user_bot_last_time:
@@ -428,7 +408,52 @@ class GPTCore:
             for record in records:
                 self.user_bot_cid[record.user_id] = record.conversation_id
                 self.user_bot_last_time[record.user_id] = record.last_time
-            await session.commit()
+            # await session.commit()
+
+    async def UpdateUserCid(self, user_id: str, cid: str | None = None, time=None):
+        if user_id == "llm":
+            if not cid:
+                await self.llm.reset()
+            else:
+                self.llm.cid = cid
+            return
+
+        if self.user_bot_cid.get(user_id):
+            try:
+                await self.ResetConversation(user_id)
+            except httpx.HTTPStatusError as ex:
+                if ex.response.status_code != 404:
+                    raise ex
+            except rct.Error as ex:
+                if ex.code != 404:
+                    raise ex
+
+        if not time:
+            if user_id.isdigit() and int(user_id) < 10000:
+                time = datetime.utcnow() - timedelta(days=3)
+            else:
+                time = datetime.utcnow()
+
+        async with create_session() as session:
+            result = await session.scalar(
+                select(ConversationId).where(ConversationId.user_id == user_id)
+            )
+            if result:
+                result.conversation_id = ""
+                result.last_time = time
+                await session.merge(result)
+                await session.commit()
+
+        if cid:
+            self.user_bot_cid[user_id] = cid
+            self.user_bot_last_time[user_id] = time
+            return
+
+        self.user_bot_cid[user_id] = ""
+        if user_id != "0" and user_id in self.user_bot_model:
+            self.user_bot_model.pop(user_id)
+        if user_id in self.user_bot_last_time:
+            self.user_bot_last_time.pop(user_id)
 
     async def __aenter__(self):
         return self
