@@ -29,5 +29,8 @@ class UserAPIManager:
         if user_id in self.user_apis:
             del self.user_apis[user_id]
 
+    def is_user_api_active(self, user_id, api_name):
+        return user_id in self.user_apis and api_name in self.user_apis[user_id]
+
 
 user_api_manager = UserAPIManager()

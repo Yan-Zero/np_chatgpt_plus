@@ -137,14 +137,34 @@ api_key:
         await api_docs.finish("已清除")
     else:
         try:
-            ins = API_HANDLE[args](event.get_user_id())
-            user_api_manager.activate_api(event.get_user_id(), args, ins)
-            await api_docs.send(
-                f"成功激活api_key: {args}\n目前一共激活了："
-                + ";".join(
-                    [i for i in user_api_manager.get_active_apis(event.get_user_id())]
+            if not user_api_manager.is_user_api_active(event.get_user_id(), args):
+                user_api_manager.activate_api(
+                    event.get_user_id(), args, API_HANDLE[args](event.get_user_id())
                 )
-            )
+                await api_docs.send(
+                    f"成功激活api_key: {args}\n目前一共激活了："
+                    + ";".join(
+                        [
+                            i
+                            for i in user_api_manager.get_active_apis(
+                                event.get_user_id()
+                            )
+                        ]
+                    )
+                )
+            else:
+                user_api_manager.deactivate_api(event.get_user_id(), args)
+                await api_docs.send(
+                    f"成功关闭api_key: {args}\n目前一共激活了："
+                    + ";".join(
+                        [
+                            i
+                            for i in user_api_manager.get_active_apis(
+                                event.get_user_id()
+                            )
+                        ]
+                    )
+                )
         except Exception as e:
             await api_docs.finish(f"错误: {e}")
 
