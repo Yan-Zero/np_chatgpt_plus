@@ -2,11 +2,11 @@ from setuptools import setup, find_packages
 
 setup(
     name="np_chatgpt_plus",
-    version="1.1.0",
+    version="1.1.1",
     author="Yan",
     author_email="1964649083@qq.com",
     description="A Chatbot Framework for Nonebot2",
-    python_requires=">=3.9",
+    python_requires=">=3.11",
     keywords=["nonebot"],
     packages=find_packages(include=("np_chatgpt_plus*")),
     include_package_data=True,

@@ -19,7 +19,7 @@ from .chatbot_with_lock import (
     ChatbotWithLock,
     construct_message,
 )
-from ..model import ConversationId
+from ..model import UserInfo
 
 
 def remove_timezone(dt: datetime) -> datetime:
@@ -90,8 +90,7 @@ class GPTCore:
         return self.cbt.is_locked
 
     async def ResetConversation(self, id: str):
-        cid = self.user_bot_cid.get(id, "")
-        if cid:
+        if cid := self.user_bot_cid.get(id, ""):
             try:
                 await self.cbt.delete_conversation(cid)
             except httpx.HTTPStatusError as ex:
@@ -115,9 +114,12 @@ class GPTCore:
             self.user_bot_cid[id] = ""
 
     async def GptPost(
-        self, messages: list, origin_result: dict | str, auto_continue: bool = True
+        self,
+        messages: list,
+        origin_result: dict | str | None,
+        auto_continue: bool = True,
     ):
-        if isinstance(origin_result, str):
+        if isinstance(origin_result, str) or not origin_result:
             cid = origin_result if origin_result else None
             pid = None
         else:
@@ -167,8 +169,7 @@ class GPTCore:
             del self.try_time[hash(strs)]
 
     async def ContinueWrite(self, id: str = "0") -> AsyncGenerator[dict, None]:
-        cid = self.user_bot_cid.get(id, "")
-        if not cid:
+        if not (cid := self.user_bot_cid.get(id, "")):
             return
 
         try:
@@ -278,14 +279,17 @@ class GPTCore:
             ):
                 pass
             async with create_session() as session:
-                R = ConversationId(
+                R = UserInfo(
                     user_id=user_id,
-                    conversation_id=self.user_bot_cid.get(user_id, ""),
+                    conversation_id=self.user_bot_cid.get(user_id),
                     last_time=self.user_bot_last_time[user_id],
+                    platform=bot.adapter.get_name(),
                 )
                 existing_obj = (
                     await session.execute(
-                        select(ConversationId).filter_by(user_id=user_id)
+                        select(UserInfo).filter_by(
+                            user_id=user_id, platform=bot.adapter.get_name()
+                        )
                     )
                 ).scalar()
                 if existing_obj:
@@ -345,8 +349,8 @@ class GPTCore:
 
         async with create_session() as session:
             await session.execute(
-                update(ConversationId)
-                .where(ConversationId.user_id == user_id)
+                update(UserInfo)
+                .where(UserInfo.user_id == user_id)
                 .values(last_time=self.user_bot_last_time[user_id])
             )
             await session.commit()
@@ -404,7 +408,7 @@ class GPTCore:
 
     async def load_user_cid(self):
         async with create_session() as session:
-            records = (await session.scalars(select(ConversationId))).all()
+            records = (await session.scalars(select(UserInfo))).all()
             for record in records:
                 self.user_bot_cid[record.user_id] = record.conversation_id
                 self.user_bot_last_time[record.user_id] = record.last_time
@@ -436,7 +440,7 @@ class GPTCore:
 
         async with create_session() as session:
             result = await session.scalar(
-                select(ConversationId).where(ConversationId.user_id == user_id)
+                select(UserInfo).where(UserInfo.user_id == user_id)
             )
             if result:
                 result.conversation_id = ""
