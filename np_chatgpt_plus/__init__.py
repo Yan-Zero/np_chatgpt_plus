@@ -25,11 +25,12 @@ from nonebot.message import event_postprocessor
 from typing import Optional, Dict, Any
 from nonebot_plugin_datastore.db import post_db_init
 from nonebot_plugin_chatrecorder import get_message_records
-from nonebot.adapters.onebot.v11.bot import send
 from .rule import BAN, COUNT_LIMIT, GPTOWNER, SUPERUSER
 from .gpt_core import GPTCore
 from .gpt_core.api_handle import user_api_manager
 from .config import Config
+from .withdraw import msg_id_for_sender as MSG_ID_FOR_SENDER
+from .withdraw import c_send as send
 
 
 global_config = nonebot.get_driver().config
